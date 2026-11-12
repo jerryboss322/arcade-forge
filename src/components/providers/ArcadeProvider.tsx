@@ -232,6 +232,24 @@ export function ArcadeProvider({ children }: { children: React.ReactNode }) {
           };
         })
       );
+
+      // Async background sync to Neon PostgreSQL (fires non-blocking on game end)
+      if (typeof payload.score === "number" && payload.score > 0) {
+        fetch("/api/scores", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            gameId,
+            score: payload.score,
+            verified: Boolean(payload.verified),
+            userId: currentUser.id,
+            username: currentUser.username,
+            deathsByCell: payload.deathsByCell,
+          }),
+        }).catch(() => {
+          // Graceful silent fallback if offline
+        });
+      }
     },
     [currentUser]
   );
@@ -348,6 +366,32 @@ export function ArcadeProvider({ children }: { children: React.ReactNode }) {
           ),
         ];
       });
+
+      // Async background sync: write newly published game to Neon PostgreSQL
+      if (createdOrUpdated && params.status === "PUBLISHED") {
+        const toSave = createdOrUpdated as ArcadeGameRecord;
+        fetch("/api/games", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: toSave.title,
+            slug: toSave.slug,
+            description: toSave.description,
+            type: toSave.type,
+            authorId: currentUser.id,
+            authorUsername: currentUser.username,
+            tags: toSave.tags,
+            lengthBucket: toSave.lengthBucket,
+            controlsGuide: toSave.controlsGuide,
+            projectData: toSave.projectData,
+            remixedFromId: toSave.remixedFromId,
+            remixedFromTitle: toSave.remixedFromTitle,
+            remixedFromAuthor: toSave.remixedFromAuthor,
+          }),
+        }).catch(() => {
+          // Graceful fallback
+        });
+      }
 
       return createdOrUpdated!;
     },
