@@ -67,6 +67,19 @@ export function GlobalHeader() {
                 Forge Studio
               </Link>
               <Link
+                href="/spaces"
+                className={`px-3 py-1.5 rounded-control text-sm font-semibold transition-colors flex items-center gap-1.5 ${
+                  pathname.startsWith("/space")
+                    ? "bg-surface-2 text-text border-2 border-border"
+                    : "text-text-muted hover:text-text"
+                }`}
+              >
+                <span>Spaces</span>
+                <span className="px-1.5 py-0.5 text-[10px] font-display rounded-full bg-accent text-bg font-bold">
+                  NEW
+                </span>
+              </Link>
+              <Link
                 href="/jams"
                 className={`px-3 py-1.5 rounded-control text-sm font-semibold transition-colors flex items-center gap-1.5 ${
                   pathname.startsWith("/jams")
@@ -234,6 +247,14 @@ export function GlobalHeader() {
         >
           <span>Jams</span>
         </Link>
+        <Link
+          href="/spaces"
+          className={`flex flex-col items-center justify-center py-1 px-3 rounded-control text-xs font-semibold ${
+            pathname.startsWith("/space") ? "text-accent" : "text-text-muted"
+          }`}
+        >
+          <span>Spaces</span>
+        </Link>
         <button
           type="button"
           onClick={() => setCreateModalOpen(true)}
@@ -300,6 +321,27 @@ export function GlobalHeader() {
             </div>
             <span className="mt-4 text-xs font-semibold text-accent-2">
               Upload Bundle →
+            </span>
+          </Link>
+
+          <Link
+            href="/spaces"
+            onClick={() => setCreateModalOpen(false)}
+            className="p-4 rounded-card border-2 border-border bg-surface-2 hover:border-accent shadow-arcade transition-all flex flex-col justify-between group sm:col-span-2"
+          >
+            <div>
+              <span className="inline-block px-2 py-0.5 text-[11px] font-display uppercase rounded-full bg-emerald-400 text-bg font-bold mb-2">
+                Virtual Office • P2P Mesh
+              </span>
+              <h3 className="text-base font-bold text-text group-hover:text-accent">
+                ForgeSpace Virtual Office
+              </h3>
+              <p className="text-xs text-text-muted mt-1 leading-relaxed">
+                Launch a 2D pixel virtual office for your team with zero server cost, P2P WebRTC proximity audio/video, soundproof meeting rooms, and breakroom arcade games!
+              </p>
+            </div>
+            <span className="mt-4 text-xs font-semibold text-accent">
+              Explore & Create Spaces →
             </span>
           </Link>
         </div>

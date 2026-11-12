@@ -49,8 +49,40 @@ model User {
   jamEntries   JamEntry[]
   jamRatings   JamRating[]
   notifications Notification[]
+  ownedWorkspaces  Workspace[]
+  workspaceMembers WorkspaceMember[]
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
+}
+
+model Workspace {
+  id          String   @id @default(cuid())
+  slug        String   @unique
+  name        String
+  description String?
+  passcode    String?
+  officeMap   Json     // ForgeGameSchemaV1_1 tilemaps, entities, zones
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members     WorkspaceMember[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model WorkspaceMember {
+  id          String    @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role        String    @default("MEMBER") // ADMIN, MEMBER, GUEST
+  avatarColor String    @default("#FF4D8D")
+  deskTileX   Int?
+  deskTileY   Int?
+  statusText  String?
+  lastSeenAt  DateTime  @default(now())
+
+  @@unique([workspaceId, userId])
 }
 
 model Game {
