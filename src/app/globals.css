@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-bg: #0B0C14;
+  --color-surface: #14162A;
+  --color-surface-2: #1D2040;
+  --color-border: #2B2F5A;
+  --color-text: #EDEEFF;
+  --color-text-muted: #9A9DC8;
+  --color-accent: #FF4D8D;
+  --color-accent-2: #37E6C4;
+  --color-warn: #FFC53D;
+  --color-danger: #FF5C5C;
+
+  --font-display: "Silkscreen", "Pixelify Sans", "Courier New", ui-monospace, monospace;
+  --font-sans: "Geist", "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  background-color: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  min-height: 100vh;
+}
+
+/* Focus ring: 2px accent outline with 2px offset on interactive elements (Section 5 of UI Spec) */
+:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Pixelated integer canvas rendering (Section 4 of UI Spec) */
+.pixelated {
+  image-rendering: -moz-crisp-edges;
+  image-rendering: -webkit-optimize-contrast;
+  image-rendering: crisp-edges;
+  image-rendering: pixelated;
+}
+
+/* Checkerboard background for transparent tiles & palette[0] */
+.checkerboard {
+  background-color: #14162A;
+  background-image:
+    linear-gradient(45deg, #1D2040 25%, transparent 25%),
+    linear-gradient(-45deg, #1D2040 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #1D2040 75%),
+    linear-gradient(-45deg, transparent 75%, #1D2040 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+/* Modern Web Guidance: Prevent underlying page from scrolling when modal <dialog> is open */
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

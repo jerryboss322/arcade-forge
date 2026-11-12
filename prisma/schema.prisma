@@ -1,0 +1,251 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum GameType {
+  HTML5_BUNDLE
+  FORGE_STUDIO
+}
+
+enum PublishStatus {
+  DRAFT
+  PUBLISHED
+  UNLISTED
+  SUSPENDED
+}
+
+enum ReactionKind {
+  FUN
+  HARD
+  BEAUTIFUL
+  CLEVER
+}
+
+enum JamStatus {
+  UPCOMING
+  ACTIVE
+  VOTING
+  CLOSED
+}
+
+model User {
+  id           String        @id @default(cuid())
+  email        String        @unique
+  username     String        @unique
+  avatarUrl    String?
+  bio          String?
+  role         String        @default("USER") // USER, MODERATOR, ADMIN
+  badges       String[]      @default([])
+  games        Game[]
+  likes        Like[]
+  scores       Score[]
+  reports      Report[]
+  reactions    Reaction[]
+  jamEntries   JamEntry[]
+  jamRatings   JamRating[]
+  notifications Notification[]
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+}
+
+model Game {
+  id                String        @id @default(cuid())
+  title             String
+  slug              String        @unique
+  description       String?
+  thumbnailUrl      String?
+  type              GameType
+  status            PublishStatus @default(DRAFT)
+  
+  // Storage & Execution
+  bundleStoragePath String?       // Path in R2 bucket (for HTML5_BUNDLE)
+  schemaVersion     String?       // e.g. "1.1.0" (for FORGE_STUDIO)
+  projectData       Json?         // Validated ForgeGameSchemaV1_1
+  revision          Int           @default(0)
+  unlistedToken     String?       @unique
+  
+  // Controls, Discovery & Metadata
+  controlsGuide     String?
+  tags              String[]      @default([])
+  lengthBucket      String?       // "<2m", "2-5m", "5-10m", "10m+"
+  playCount         Int           @default(0)
+  completionCount   Int           @default(0)
+  likeCount         Int           @default(0)
+  remixCount        Int           @default(0)
+  trendScore        Float         @default(0)
+  featuredAt        DateTime?
+  
+  // Remix & Attribution
+  remixAllowed      Boolean       @default(true)
+  remixedFromId     String?
+  remixedFromTitle  String?
+  remixedFromAuthor String?
+  rootGameId        String?
+  remixedFrom       Game?         @relation("GameRemixes", fields: [remixedFromId], references: [id])
+  remixes           Game[]        @relation("GameRemixes")
+  
+  authorId          String
+  author            User          @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  
+  versions          GameVersion[]
+  likes             Like[]
+  scores            Score[]
+  reports           Report[]
+  reactions         Reaction[]
+  jamEntries        JamEntry[]
+  
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([status, trendScore(sort: Desc)])
+  @@index([status, createdAt(sort: Desc)])
+  @@index([authorId])
+}
+
+model GameVersion {
+  id          String   @id @default(cuid())
+  gameId      String
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  number      Int
+  projectData Json?
+  bundlePath  String?
+  label       String?
+  createdAt   DateTime @default(now())
+
+  @@unique([gameId, number])
+}
+
+model GameStatHourly {
+  gameId       String
+  hour         DateTime
+  uniquePlays  Int      @default(0)
+  completions  Int      @default(0)
+  likes        Int      @default(0)
+  remixes      Int      @default(0)
+
+  @@id([gameId, hour])
+}
+
+model GameCellStat {
+  gameId   String
+  version  Int
+  room     String
+  cx       Int
+  cy       Int
+  deaths   Int    @default(0)
+
+  @@id([gameId, version, room, cx, cy])
+}
+
+model Follow {
+  followerId  String
+  followingId String
+  createdAt   DateTime @default(now())
+
+  @@id([followerId, followingId])
+}
+
+model Reaction {
+  userId String
+  gameId String
+  kind   ReactionKind
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  game   Game         @relation(fields: [gameId], references: [id], onDelete: Cascade)
+
+  @@id([userId, gameId, kind])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  payload   Json
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt, createdAt])
+}
+
+model Jam {
+  id               String     @id @default(cuid())
+  slug             String     @unique
+  title            String
+  theme            String
+  description      String?
+  status           JamStatus  @default(UPCOMING)
+  startsAt         DateTime
+  submissionsEndAt DateTime
+  votingEndsAt     DateTime
+  entries          JamEntry[]
+}
+
+model JamEntry {
+  id            String      @id @default(cuid())
+  jamId         String
+  jam           Jam         @relation(fields: [jamId], references: [id], onDelete: Cascade)
+  gameId        String
+  game          Game        @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  gameVersionId String
+  authorId      String
+  author        User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  disqualified  Boolean     @default(false)
+  ratings       JamRating[]
+  createdAt     DateTime    @default(now())
+
+  @@unique([jamId, authorId])
+}
+
+model JamRating {
+  id         String   @id @default(cuid())
+  entryId    String
+  entry      JamEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  raterId    String
+  rater      User     @relation(fields: [raterId], references: [id], onDelete: Cascade)
+  fun        Int
+  creativity Int
+  theme      Int
+
+  @@unique([entryId, raterId])
+}
+
+model Score {
+  id         String   @id @default(cuid())
+  score      Int
+  verified   Boolean  @default(false)
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  gameId     String
+  game       Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@index([gameId, score(sort: Desc)])
+}
+
+model Like {
+  id        String   @id @default(cuid())
+  userId    String
+  gameId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  game      Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, gameId])
+}
+
+model Report {
+  id          String   @id @default(cuid())
+  reason      String
+  details     String?
+  reporterId  String
+  reporter    User     @relation(fields: [reporterId], references: [id])
+  gameId      String
+  game        Game     @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  status      String   @default("PENDING") // PENDING, RESOLVED, DISMISSED
+  createdAt   DateTime @default(now())
+}
