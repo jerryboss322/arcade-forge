@@ -67,8 +67,31 @@ interface PeerConnectionEntry {
   remoteMedia?: RemotePeerMedia;
   restartedIce?: boolean;
   makingOffer: boolean;
+  initialSyncDone: boolean;
+  role: "initiator" | "responder";
   readyPromise: Promise<void>;
   fallbackTimer?: ReturnType<typeof setTimeout>;
+}
+
+function getIceServers(): RTCIceServer[] {
+  const servers: RTCIceServer[] = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun2.l.google.com:19302" },
+    { urls: "stun:stun3.l.google.com:19302" },
+  ];
+  const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;
+  if (turnUrl) {
+    const turnServer: RTCIceServer = { urls: turnUrl };
+    if (process.env.NEXT_PUBLIC_TURN_USERNAME) {
+      turnServer.username = process.env.NEXT_PUBLIC_TURN_USERNAME;
+    }
+    if (process.env.NEXT_PUBLIC_TURN_CREDENTIAL) {
+      turnServer.credential = process.env.NEXT_PUBLIC_TURN_CREDENTIAL;
+    }
+    servers.push(turnServer);
+  }
+  return servers;
 }
 
 export class WebRTCMeshManager {
@@ -237,10 +260,14 @@ export class WebRTCMeshManager {
   }
 
   private async syncExistingPeersMedia(): Promise<void> {
-    if (!this.localStream) return;
+    if (!this.localStream && !this.screenStream) return;
     for (const [peerId, entry] of this.peers) {
-      const added = this.syncTracksOnConnection(entry.pc);
-      if (added && entry.pc.signalingState === "stable") {
+      // Wait for connectToPeer's initial setup; responders must wait for the initiator's offer
+      // before binding tracks so transceivers match negotiated mids cleanly.
+      if (!entry.initialSyncDone) continue;
+      if (entry.role === "responder" && !entry.pc.remoteDescription) continue;
+      const changed = await this.syncTracksOnConnection(entry.pc);
+      if (changed && entry.pc.signalingState === "stable") {
         await this.sendOffer(peerId, entry);
       }
     }
@@ -250,36 +277,43 @@ export class WebRTCMeshManager {
    * Ensures both audio and video transceivers exist on pc, attaching real tracks when available
    * or recvonly transceivers otherwise so receive-only peers still receive remote feeds.
    */
-  private syncTracksOnConnection(pc: RTCPeerConnection): boolean {
-    const activeStream = this.screenStream || this.localStream;
+  private async syncTracksOnConnection(pc: RTCPeerConnection): Promise<boolean> {
+    const outboundStream = this.localStream || this.screenStream;
     let changed = false;
 
     for (const kind of ["audio", "video"] as const) {
       const track =
         kind === "video"
-          ? activeStream?.getVideoTracks()[0] ?? this.localStream?.getVideoTracks()[0]
-          : this.localStream?.getAudioTracks()[0];
+          ? this.screenStream?.getVideoTracks()[0] ?? this.localStream?.getVideoTracks()[0] ?? null
+          : this.localStream?.getAudioTracks()[0] ?? null;
 
-      const existing = pc
+      const matchingTransceivers = pc
         .getTransceivers()
-        .find((t) => t.sender.track?.kind === kind || t.receiver.track?.kind === kind);
+        .filter(
+          (t) =>
+            t.currentDirection !== "stopped" &&
+            (t.sender.track?.kind === kind || t.receiver.track?.kind === kind)
+        );
+      // Prefer a transceiver already bound to a negotiated m-line mid over an unassociated one
+      const existing =
+        matchingTransceivers.find((t) => t.mid !== null) ?? matchingTransceivers[0];
 
       if (track) {
         if (existing) {
           if (existing.sender.track !== track) {
-            existing.sender.replaceTrack(track).catch(() => {});
-            changed = true;
+            await existing.sender.replaceTrack(track).catch(() => {});
           }
           if (existing.direction === "recvonly" || existing.direction === "inactive") {
             existing.direction = "sendrecv";
             changed = true;
           }
-        } else if (activeStream) {
-          pc.addTrack(track, activeStream);
+        } else if (outboundStream) {
+          pc.addTrack(track, outboundStream);
           changed = true;
         }
       } else if (!existing) {
         pc.addTransceiver(kind, { direction: "recvonly" });
+        changed = true;
       }
     }
 
@@ -322,7 +356,7 @@ export class WebRTCMeshManager {
         this.screenStream = null;
       }
       this.isScreenSharing = false;
-      this.replaceVideoTrackInAllPeers(this.localStream?.getVideoTracks()[0] ?? null);
+      await this.replaceVideoTrackInAllPeers(this.localStream?.getVideoTracks()[0] ?? null);
       return false;
     }
 
@@ -339,27 +373,53 @@ export class WebRTCMeshManager {
         screenTrack.onended = () => {
           this.isScreenSharing = false;
           this.screenStream = null;
-          this.replaceVideoTrackInAllPeers(this.localStream?.getVideoTracks()[0] ?? null);
+          void this.replaceVideoTrackInAllPeers(this.localStream?.getVideoTracks()[0] ?? null);
         };
       }
 
-      this.replaceVideoTrackInAllPeers(screenTrack ?? null);
+      await this.replaceVideoTrackInAllPeers(screenTrack ?? null);
       return true;
     } catch {
       return false;
     }
   }
 
-  private replaceVideoTrackInAllPeers(newVideoTrack: MediaStreamTrack | null): void {
-    for (const [, { pc }] of this.peers) {
-      const videoTransceiver = pc
+  private async replaceVideoTrackInAllPeers(newVideoTrack: MediaStreamTrack | null): Promise<void> {
+    const outboundStream = this.localStream || this.screenStream;
+    for (const [peerId, entry] of this.peers) {
+      await entry.readyPromise;
+      if (this.destroyed || this.peers.get(peerId) !== entry) continue;
+
+      const { pc } = entry;
+      // Wait for remote description on passive responders before adding/modifying negotiated transceivers
+      if (entry.role === "responder" && !pc.remoteDescription) continue;
+
+      const matching = pc
         .getTransceivers()
-        .find((t) => t.sender.track?.kind === "video" || t.receiver.track?.kind === "video");
+        .filter(
+          (t) =>
+            t.currentDirection !== "stopped" &&
+            (t.sender.track?.kind === "video" || t.receiver.track?.kind === "video")
+        );
+      const videoTransceiver = matching.find((t) => t.mid !== null) ?? matching[0];
+
+      let needsOffer = false;
       if (videoTransceiver) {
-        videoTransceiver.sender.replaceTrack(newVideoTrack).catch(() => {});
-        if (newVideoTrack && videoTransceiver.direction === "recvonly") {
+        await videoTransceiver.sender.replaceTrack(newVideoTrack).catch(() => {});
+        if (
+          newVideoTrack &&
+          (videoTransceiver.direction === "recvonly" || videoTransceiver.direction === "inactive")
+        ) {
           videoTransceiver.direction = "sendrecv";
+          needsOffer = true;
         }
+      } else if (newVideoTrack && outboundStream) {
+        pc.addTrack(newVideoTrack, outboundStream);
+        needsOffer = true;
+      }
+
+      if (needsOffer && pc.signalingState === "stable") {
+        await this.sendOffer(peerId, entry);
       }
     }
   }
@@ -388,11 +448,8 @@ export class WebRTCMeshManager {
     if (this.destroyed || this.peers.has(peerId)) return;
 
     const pc = new RTCPeerConnection({
-      iceServers: [
-        { urls: "stun:stun.l.google.com:19302" },
-        { urls: "stun:stun1.l.google.com:19302" },
-        { urls: "stun:stun2.l.google.com:19302" },
-      ],
+      iceServers: getIceServers(),
+      iceCandidatePoolSize: 2,
     });
 
     let resolveReady!: () => void;
@@ -405,6 +462,8 @@ export class WebRTCMeshManager {
       pendingCandidates: [],
       remoteStream: null,
       makingOffer: false,
+      initialSyncDone: false,
+      role: initiator ? "initiator" : "responder",
       readyPromise,
     };
     this.peers.set(peerId, entry);
@@ -430,12 +489,22 @@ export class WebRTCMeshManager {
       }
     };
 
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed" && !entry.restartedIce) {
+    const triggerIceRecovery = () => {
+      if (
+        !this.destroyed &&
+        this.peers.get(peerId) === entry &&
+        !entry.restartedIce &&
+        (pc.connectionState === "failed" || pc.iceConnectionState === "failed")
+      ) {
         entry.restartedIce = true;
         pc.restartIce?.();
+        if (pc.signalingState === "stable") {
+          void this.sendOffer(peerId, entry);
+        }
       }
     };
+    pc.onconnectionstatechange = triggerIceRecovery;
+    pc.oniceconnectionstatechange = triggerIceRecovery;
 
     pc.ontrack = (event) => {
       let combinedStream = entry.remoteStream;
@@ -460,8 +529,9 @@ export class WebRTCMeshManager {
         );
       };
 
-      // Re-emit if track unmutes or ends later so UI toggles cleanly between video and initials
+      // Re-emit whenever track unmutes, mutes, or ends so UI switches live video cleanly
       event.track.onunmute = emitStream;
+      event.track.onmute = emitStream;
       event.track.onended = emitStream;
       emitStream();
     };
@@ -473,7 +543,12 @@ export class WebRTCMeshManager {
       if (this.destroyed || this.peers.get(peerId) !== entry) {
         return;
       }
-      this.syncTracksOnConnection(pc);
+      entry.initialSyncDone = true;
+      // Only attach pre-offer transceivers when initiating; responders bind tracks
+      // directly onto the offer's negotiated m-lines inside handleSignal().
+      if (initiator) {
+        await this.syncTracksOnConnection(pc);
+      }
     } finally {
       resolveReady();
     }
@@ -489,7 +564,8 @@ export class WebRTCMeshManager {
           !pc.remoteDescription &&
           pc.signalingState === "stable"
         ) {
-          void this.sendOffer(peerId, entry);
+          entry.role = "initiator";
+          void this.syncTracksOnConnection(pc).then(() => this.sendOffer(peerId, entry));
         }
       }, 2800);
     }
@@ -539,7 +615,7 @@ export class WebRTCMeshManager {
         }
 
         if (isOffer) {
-          this.syncTracksOnConnection(pc);
+          await this.syncTracksOnConnection(pc);
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           this.sendSignalCb(fromPeerId, { sdp: pc.localDescription });
