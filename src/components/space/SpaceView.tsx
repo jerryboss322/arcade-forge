@@ -206,21 +206,18 @@ export function SpaceView({
           setChatMessages((prev) => [
             ...prev,
             {
-              id: `msg_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+              id: msg.id,
               sender: msg.sender,
               text: msg.text,
-              time: new Date(msg.timestamp).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              }),
+              time: msg.time,
               zoneId: msg.zoneId,
             },
           ]);
           break;
 
-        case "signal":
+        case "webrtc_signal":
           if (msg.to === localPeer.id) {
-            webrtcRef.current?.handleSignalData(msg.from, msg.data);
+            webrtcRef.current?.handleSignal(msg.from, msg.payload);
           }
           break;
       }
@@ -231,22 +228,17 @@ export function SpaceView({
   // Initialize WebRTC and Signaling
   useEffect(() => {
     // 1. Initialize WebRTC mesh manager
-    const webrtc = new WebRTCMeshManager({
-      localPeerId: localPeer.id,
-      onRemoteStream: (peerId, stream) => {
+    const webrtc = new WebRTCMeshManager(
+      (toPeerId: string, payload: any) => {
+        signalingRef.current?.sendSignal(toPeerId, payload);
+      },
+      (peerId: string, stream: MediaStream, isSpeaking: boolean) => {
         setStreamsMap((prev) => ({ ...prev, [peerId]: stream }));
+        if (isSpeaking !== undefined) {
+          setSpeakingMap((prev) => ({ ...prev, [peerId]: isSpeaking }));
+        }
       },
-      onPeerDisconnect: (peerId) => {
-        setStreamsMap((prev) => {
-          const next = { ...prev };
-          delete next[peerId];
-          return next;
-        });
-      },
-      onSignalData: (peerId, data) => {
-        signalingRef.current?.sendSignal(peerId, data);
-      },
-      onSpeakingChange: (peerId, isSpeaking) => {
+      (peerId: string, isSpeaking: boolean) => {
         setSpeakingMap((prev) => ({ ...prev, [peerId]: isSpeaking }));
         if (peerId === "local") {
           setLocalPeer((prev) => ({
@@ -254,11 +246,11 @@ export function SpaceView({
             media: { ...prev.media, speaking: isSpeaking },
           }));
         }
-      },
-    });
+      }
+    );
 
     webrtcRef.current = webrtc;
-    webrtc.startLocalStream().catch(() => {
+    webrtc.initLocalMedia(true, true).catch(() => {
       // Browser camera/mic permissions denied or unavailable: graceful fallback
     });
 

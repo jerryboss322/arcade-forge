@@ -45,7 +45,7 @@ export function RoomLockModal({
   };
 
   return (
-    <ArcadeDialog isOpen={isOpen} onClose={onClose} title={`${zoneName} Security & Access`}>
+    <ArcadeDialog open={isOpen} onClose={onClose} title={`${zoneName} Security & Access`}>
       <div className="space-y-6">
         {/* Status Indicator */}
         <div className="p-4 bg-surface-2 border border-border rounded-xl flex items-center justify-between">

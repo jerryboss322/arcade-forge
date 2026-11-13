@@ -117,7 +117,7 @@ export function MeetingScheduleModal({
   };
 
   return (
-    <ArcadeDialog isOpen={isOpen} onClose={onClose} title="Office Schedule & Meeting Rooms">
+    <ArcadeDialog open={isOpen} onClose={onClose} title="Office Schedule & Meeting Rooms">
       <div className="space-y-6">
         {/* Header Tabs & Actions */}
         <div className="flex items-center justify-between border-b border-border pb-3">

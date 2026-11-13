@@ -76,7 +76,7 @@ export function AvatarCustomizerModal({
   };
 
   return (
-    <ArcadeDialog isOpen={isOpen} onClose={onClose} title="Customize Your Office Avatar">
+    <ArcadeDialog open={isOpen} onClose={onClose} title="Customize Your Office Avatar">
       <form onSubmit={handleApply} className="space-y-6">
         {/* Live Avatar Preview Card */}
         <div className="p-4 bg-surface-2 border border-border rounded-xl flex items-center gap-6 justify-center">
