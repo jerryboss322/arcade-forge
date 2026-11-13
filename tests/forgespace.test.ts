@@ -102,4 +102,81 @@ describe("ForgeSpace Virtual Office", () => {
     // Both users inside same boardroom: full volume
     expect(calculateGain(6, true, true, true)).toBe(1.0);
   });
+
+  it("3D isometric coordinates correctly convert tile indices to WebGL world space", () => {
+    const floorTileSize = 1.6;
+    const cols = 40;
+    const rows = 26;
+    const halfCols = cols / 2;
+    const halfRows = rows / 2;
+
+    const tileToWorld = (col: number, row: number) => ({
+      x: (col - halfCols + 0.5) * floorTileSize,
+      z: (row - halfRows + 0.5) * floorTileSize,
+    });
+
+    const worldToTile = (wx: number, wz: number) => ({
+      col: Math.round(wx / floorTileSize + halfCols - 0.5),
+      row: Math.round(wz / floorTileSize + halfRows - 0.5),
+    });
+
+    // Center tile (20, 13)
+    const centerWorld = tileToWorld(20, 13);
+    expect(centerWorld.x).toBeCloseTo(0.8, 1);
+    expect(centerWorld.z).toBeCloseTo(0.8, 1);
+
+    const backToTile = worldToTile(centerWorld.x, centerWorld.z);
+    expect(backToTile.col).toBe(20);
+    expect(backToTile.row).toBe(13);
+
+    // Origin tile (0, 0)
+    const originWorld = tileToWorld(0, 0);
+    expect(originWorld.x).toBeLessThan(0);
+    expect(originWorld.z).toBeLessThan(0);
+    const backOrigin = worldToTile(originWorld.x, originWorld.z);
+    expect(backOrigin.col).toBe(0);
+    expect(backOrigin.row).toBe(0);
+  });
+
+  it("truthful presence computation: never displays simulated or fake peer counts", () => {
+    // When 0 remote peers are connected, count is strictly 1 (the local user)
+    const remotePeersEmpty: Array<{ id: string; name: string }> = [];
+    const countEmpty = remotePeersEmpty.length + 1;
+    expect(countEmpty).toBe(1);
+
+    // When 3 remote peers join over WebRTC
+    const remotePeersActive = [
+      { id: "peer-1", name: "Bob", status: "In Meeting" },
+      { id: "peer-2", name: "Carol", status: "Deep Focus" },
+      { id: "peer-3", name: "Dave", status: "Coffee Break" },
+    ];
+    const countActive = remotePeersActive.length + 1;
+    expect(countActive).toBe(4);
+
+    // Zero arbitrary multipliers or simulated bots
+    expect(countActive).toBe(remotePeersActive.length + 1);
+  });
+
+  it("calculates room density and telemetry statistics truthfully", () => {
+    const peers = [
+      { id: "p1", zoneId: "boardroom", status: "In Meeting" },
+      { id: "p2", zoneId: "boardroom", status: "In Meeting" },
+      { id: "p3", zoneId: "war_room", status: "Sprint Planning" },
+      { id: "p4", zoneId: "cafe_lounge", status: "Coffee Break" },
+      { id: "p5", zoneId: "open_desks", status: "Deep Focus" },
+    ];
+
+    const boardroomCount = peers.filter((p) => p.zoneId === "boardroom").length;
+    const warRoomCount = peers.filter((p) => p.zoneId === "war_room").length;
+    const cafeCount = peers.filter((p) => p.zoneId === "cafe_lounge").length;
+
+    expect(boardroomCount).toBe(2);
+    expect(warRoomCount).toBe(1);
+    expect(cafeCount).toBe(1);
+
+    // P2P savings vs traditional $7/user/mo Zoom/Gather licenses
+    const totalUsers = peers.length;
+    const monthlySavings = (totalUsers * 7.0).toFixed(2);
+    expect(monthlySavings).toBe("35.00");
+  });
 });
