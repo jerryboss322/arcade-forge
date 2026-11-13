@@ -1,6 +1,6 @@
 // Lightweight Zero-Cost Peer Signaling & Coordination Engine
-// Uses BroadcastChannel for instant local multi-tab sync + Edge API polling fallback.
-// Transports (x, y) coordinates, avatar status, and WebRTC SDP offers/answers.
+// Uses BroadcastChannel for instant local multi-tab sync + throttled Edge API polling fallback.
+// Transports (x, y) coordinates, avatar status, and WebRTC SDP offers/answers with incremental cursors.
 
 export interface PeerMediaState {
   audio: boolean;
@@ -27,7 +27,7 @@ export interface PeerState {
 export type SignalMessage =
   | { type: "peer_join"; peer: PeerState }
   | { type: "peer_move"; id: string; x: number; y: number; dir: PeerState["dir"]; isMoving: boolean; zoneId: string }
-  | { type: "peer_status"; id: string; status: string; deskClaimed?: string | null }
+  | { type: "peer_status"; id: string; status: string; deskClaimed?: string | null; name?: string; avatarColor?: string }
   | { type: "peer_media"; id: string; media: PeerMediaState }
   | { type: "peer_leave"; id: string }
   | { type: "webrtc_signal"; from: string; to: string; payload: any }
@@ -37,7 +37,12 @@ export class SpaceSignaling {
   private channelName: string;
   private bc: BroadcastChannel | null = null;
   private onMessageCb: (msg: SignalMessage) => void;
-  private pollInterval: any = null;
+  private pollInterval: ReturnType<typeof setInterval> | null = null;
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private moveFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  private pendingMoveMsg: SignalMessage | null = null;
+  private lastEdgeSendAt = 0;
+  private lastEdgeCursor = 0;
   public localPeer: PeerState;
 
   constructor(
@@ -62,24 +67,51 @@ export class SpaceSignaling {
       }
     }
 
-    // Edge API heartbeat sync fallback for separate browsers
-    this.startHeartbeatSync(spaceSlug);
+    // Edge API heartbeat sync fallback for separate browsers/devices
+    this.startHeartbeatSync();
   }
 
   public broadcast(msg: SignalMessage): void {
-    // 1. Send via local BroadcastChannel
+    // 1. Send immediately via local BroadcastChannel (zero network cost)
     if (this.bc) {
       try {
         this.bc.postMessage(msg);
-      } catch (e) {
-        // ignore
+      } catch {
+        // Ignore cross-tab close race
       }
     }
 
-    // 2. Also send to Edge API if it's a movement or join/leave or signal
+    // 2. Coalesce high-frequency peer_move messages for Edge API so multi-user HTTP stays light
     if (typeof window !== "undefined") {
-      this.sendToEdge(msg).catch(() => {});
+      if (msg.type === "peer_move") {
+        this.scheduleEdgeMoveFlush(msg);
+      } else {
+        this.sendToEdge(msg).catch(() => {});
+      }
     }
+  }
+
+  private scheduleEdgeMoveFlush(msg: SignalMessage): void {
+    this.pendingMoveMsg = msg;
+    const now = Date.now();
+    const elapsed = now - this.lastEdgeSendAt;
+
+    if (elapsed >= 280) {
+      this.flushPendingMove();
+    } else if (!this.moveFlushTimer) {
+      this.moveFlushTimer = setTimeout(() => {
+        this.moveFlushTimer = null;
+        this.flushPendingMove();
+      }, 280 - elapsed);
+    }
+  }
+
+  private flushPendingMove(): void {
+    if (!this.pendingMoveMsg) return;
+    const msg = this.pendingMoveMsg;
+    this.pendingMoveMsg = null;
+    this.lastEdgeSendAt = Date.now();
+    this.sendToEdge(msg).catch(() => {});
   }
 
   private async sendToEdge(msg: SignalMessage): Promise<void> {
@@ -98,18 +130,24 @@ export class SpaceSignaling {
     }
   }
 
-  private startHeartbeatSync(spaceSlug: string): void {
+  private startHeartbeatSync(): void {
     if (typeof window === "undefined") return;
 
     // Send initial join
     this.broadcast({ type: "peer_join", peer: this.localPeer });
 
-    // Poll edge for other machine peers every 2.5 seconds
+    // Poll edge for remote peer messages every 2s using incremental timestamp cursor
     this.pollInterval = setInterval(async () => {
+      if (typeof document !== "undefined" && document.hidden) return;
       try {
-        const res = await fetch(`/api/space/peers?channel=${encodeURIComponent(this.channelName)}&senderId=${this.localPeer.id}`);
+        const res = await fetch(
+          `/api/space/peers?channel=${encodeURIComponent(this.channelName)}&senderId=${encodeURIComponent(this.localPeer.id)}&since=${this.lastEdgeCursor}`
+        );
         if (res.ok) {
           const data = await res.json();
+          if (typeof data.serverTime === "number") {
+            this.lastEdgeCursor = data.serverTime;
+          }
           if (Array.isArray(data.messages)) {
             for (const msg of data.messages) {
               this.onMessageCb(msg);
@@ -119,10 +157,28 @@ export class SpaceSignaling {
       } catch {
         // Fallback silently
       }
-    }, 2500);
+    }, 2000);
+
+    // Periodic presence heartbeat (every 10s) so newly joined users discover existing peers
+    this.heartbeatInterval = setInterval(() => {
+      if (typeof document !== "undefined" && document.hidden) return;
+      this.localPeer.updatedAt = Date.now();
+      this.broadcast({ type: "peer_join", peer: this.localPeer });
+    }, 10_000);
   }
 
   public updatePosition(x: number, y: number, dir: PeerState["dir"], isMoving: boolean, zoneId: string): void {
+    // Only broadcast if state actually changed
+    if (
+      this.localPeer.x === x &&
+      this.localPeer.y === y &&
+      this.localPeer.dir === dir &&
+      this.localPeer.isMoving === isMoving &&
+      this.localPeer.zoneId === zoneId
+    ) {
+      return;
+    }
+
     this.localPeer.x = x;
     this.localPeer.y = y;
     this.localPeer.dir = dir;
@@ -150,16 +206,29 @@ export class SpaceSignaling {
     });
   }
 
-  public updateStatus(status: string, deskClaimed?: string | null): void {
+  public updateStatus(
+    status: string,
+    deskClaimed?: string | null,
+    name?: string,
+    avatarColor?: string
+  ): void {
     this.localPeer.status = status;
     if (deskClaimed !== undefined) {
       this.localPeer.deskClaimed = deskClaimed;
+    }
+    if (name !== undefined) {
+      this.localPeer.name = name;
+    }
+    if (avatarColor !== undefined) {
+      this.localPeer.avatarColor = avatarColor;
     }
     this.broadcast({
       type: "peer_status",
       id: this.localPeer.id,
       status,
       deskClaimed: this.localPeer.deskClaimed,
+      name: this.localPeer.name,
+      avatarColor: this.localPeer.avatarColor,
     });
   }
 
@@ -188,6 +257,8 @@ export class SpaceSignaling {
 
   public destroy(): void {
     if (this.pollInterval) clearInterval(this.pollInterval);
+    if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
+    if (this.moveFlushTimer) clearTimeout(this.moveFlushTimer);
     this.broadcast({ type: "peer_leave", id: this.localPeer.id });
     if (this.bc) {
       this.bc.close();
