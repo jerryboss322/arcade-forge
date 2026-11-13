@@ -16,6 +16,7 @@ import {
 } from "../src/lib/space/officeThemes";
 import { ScreenPositionsStore } from "../src/lib/space/screenPositionsStore";
 import { computeSpatialGain } from "../src/lib/space/webrtcMesh";
+import { GET, POST } from "../src/app/api/space/peers/route";
 
 describe("ForgeSpace Virtual Office", () => {
   it("generates 40x26 office tilemap with zones and collision boundaries", () => {
@@ -310,5 +311,103 @@ describe("ForgeSpace Virtual Office", () => {
         })
       ).toBe(1);
     }
+  });
+
+  it("discovers joined peers and delivers unicast WebRTC signals reliably with sequence cursors", async () => {
+    const channel = "forgespace_test_room_sync";
+    const peerA = {
+      id: "peer_a",
+      name: "Alice",
+      avatarColor: "#37E6C4",
+      x: 8,
+      y: 20,
+      dir: "down" as const,
+      isMoving: false,
+      zoneId: "reception",
+      status: "Focusing",
+      deskClaimed: null,
+      media: { audio: true, video: true, screen: false, speaking: false },
+      updatedAt: Date.now(),
+    };
+
+    // Peer A joins room
+    const postJoin = await POST(
+      new Request("http://localhost/api/space/peers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel,
+          senderId: peerA.id,
+          message: { type: "peer_join", peer: peerA },
+        }),
+      })
+    );
+    expect(postJoin.status).toBe(200);
+
+    // Peer B joins later and polls with since=0 -> discovers Peer A in active roster
+    const pollB1 = await GET(
+      new Request(`http://localhost/api/space/peers?channel=${channel}&senderId=peer_b&since=0`)
+    );
+    const dataB1 = await pollB1.json();
+    expect(dataB1.peers.some((p: { id: string }) => p.id === "peer_a")).toBe(true);
+    expect(typeof dataB1.cursor).toBe("number");
+
+    // Peer A sends WebRTC SDP offer targeted specifically at peer_b
+    await POST(
+      new Request("http://localhost/api/space/peers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel,
+          senderId: peerA.id,
+          message: {
+            type: "webrtc_signal",
+            from: peerA.id,
+            to: "peer_b",
+            payload: { sdp: { type: "offer", sdp: "v=0..." } },
+          },
+        }),
+      })
+    );
+
+    // Peer C does not receive Peer B's unicast signal
+    const pollC = await GET(
+      new Request(
+        `http://localhost/api/space/peers?channel=${channel}&senderId=peer_c&since=${dataB1.cursor}`
+      )
+    );
+    const dataC = await pollC.json();
+    expect(dataC.messages).toHaveLength(0);
+
+    // Peer B receives the exact WebRTC signal using previous sequence cursor
+    const pollB2 = await GET(
+      new Request(
+        `http://localhost/api/space/peers?channel=${channel}&senderId=peer_b&since=${dataB1.cursor}`
+      )
+    );
+    const dataB2 = await pollB2.json();
+    expect(dataB2.messages).toHaveLength(1);
+    expect(dataB2.messages[0].type).toBe("webrtc_signal");
+    expect(dataB2.messages[0].to).toBe("peer_b");
+
+    // Peer A leaves -> removed from active peers
+    await POST(
+      new Request("http://localhost/api/space/peers", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          channel,
+          senderId: peerA.id,
+          message: { type: "peer_leave", id: peerA.id },
+        }),
+      })
+    );
+    const pollB3 = await GET(
+      new Request(
+        `http://localhost/api/space/peers?channel=${channel}&senderId=peer_b&since=${dataB2.cursor}`
+      )
+    );
+    const dataB3 = await pollB3.json();
+    expect(dataB3.peers.some((p: { id: string }) => p.id === "peer_a")).toBe(false);
   });
 });
