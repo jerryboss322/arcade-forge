@@ -7,12 +7,14 @@ interface SpaceControlsProps {
   isVideoMuted: boolean;
   isScreenSharing: boolean;
   isSidebarOpen: boolean;
+  isFullscreen: boolean;
   videoLayout: "floating" | "docked";
   viewMode: "3d" | "2d";
   onToggleAudio: () => void;
   onToggleVideo: () => void;
   onToggleScreenShare: () => void;
   onToggleSidebar: () => void;
+  onToggleFullscreen: () => void;
   onToggleVideoLayout: () => void;
   onToggleViewMode: () => void;
   onOpenAvatarCustomizer: () => void;
@@ -26,12 +28,14 @@ export function SpaceControls({
   isVideoMuted,
   isScreenSharing,
   isSidebarOpen,
+  isFullscreen,
   videoLayout,
   viewMode,
   onToggleAudio,
   onToggleVideo,
   onToggleScreenShare,
   onToggleSidebar,
+  onToggleFullscreen,
   onToggleVideoLayout,
   onToggleViewMode,
   onOpenAvatarCustomizer,
@@ -145,6 +149,36 @@ export function SpaceControls({
         }`}
       >
         <span className="text-sm">👥</span>
+      </button>
+
+      {/* Fullscreen toggle */}
+      <button
+        type="button"
+        onClick={onToggleFullscreen}
+        aria-pressed={isFullscreen}
+        aria-label={isFullscreen ? "Exit fullscreen mode" : "Enter fullscreen mode"}
+        title={isFullscreen ? "Exit Fullscreen (F)" : "Fullscreen Mode (F)"}
+        className={`w-10 h-10 rounded-full flex items-center justify-center transition-transform active:scale-95 ${
+          isFullscreen
+            ? "bg-accent/20 text-accent border border-accent"
+            : "bg-surface-2 text-text border border-border hover:border-accent"
+        }`}
+      >
+        {isFullscreen ? (
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+            <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+            <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+            <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+          </svg>
+        ) : (
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 8V5a2 2 0 0 1 2-2h3" />
+            <path d="M16 3h3a2 2 0 0 1 2 2v3" />
+            <path d="M21 16v3a2 2 0 0 1-2 2h-3" />
+            <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
+          </svg>
+        )}
       </button>
 
       {/* Help / Guide button */}
