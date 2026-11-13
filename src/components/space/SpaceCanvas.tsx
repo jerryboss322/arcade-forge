@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect, useState, useCallback } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import {
   OfficeTilemap,
   OFFICE_ZONES,
@@ -11,6 +11,7 @@ import {
   InteractiveObject,
 } from "@/lib/space/officeMap";
 import { PeerState } from "@/lib/space/signaling";
+import { screenPositionsStore, ScreenPosition } from "@/lib/space/screenPositionsStore";
 
 interface SpaceCanvasProps {
   map: OfficeTilemap;
@@ -20,7 +21,7 @@ interface SpaceCanvasProps {
   onMove: (x: number, y: number, dir: PeerState["dir"], isMoving: boolean, zoneId: string) => void;
   onInteract: (obj: InteractiveObject) => void;
   onAvatarClick?: (peer: PeerState) => void;
-  onScreenPositionUpdate?: (positions: Record<string, { screenX: number; screenY: number; inView: boolean }>) => void;
+  onScreenPositionUpdate?: (positions: Record<string, ScreenPosition>) => void;
 }
 
 export function SpaceCanvas({
@@ -34,6 +35,16 @@ export function SpaceCanvas({
   onScreenPositionUpdate,
 }: SpaceCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // Latest-value refs so the 2D loop never tears down on peer/prop updates
+  const localPeerRef = useRef(localPeer);
+  const remotePeersRef = useRef(remotePeers);
+  const speakingMapRef = useRef(speakingMap);
+  const onMoveRef = useRef(onMove);
+  const onInteractRef = useRef(onInteract);
+  const onScreenPosRef = useRef(onScreenPositionUpdate);
+  const nearbyObjectRef = useRef<InteractiveObject | null>(null);
+  const activeZoneIdRef = useRef<string | null>(null);
 
   // Position state (in tile coordinates with smooth interpolation)
   const posRef = useRef({
@@ -59,7 +70,35 @@ export function SpaceCanvas({
   const [nearbyObject, setNearbyObject] = useState<InteractiveObject | null>(null);
   const [activeZone, setActiveZone] = useState<SpaceZone | null>(null);
 
-  // Keyboard listeners
+  useEffect(() => {
+    // Handle external warp / quick-jump button (> 2.5 tiles delta from local loop)
+    const dist = Math.hypot(localPeer.x - posRef.current.x, localPeer.y - posRef.current.y);
+    if (dist > 2.5) {
+      posRef.current.x = localPeer.x;
+      posRef.current.y = localPeer.y;
+      posRef.current.pixelX = localPeer.x * 16;
+      posRef.current.pixelY = localPeer.y * 16;
+      posRef.current.dir = localPeer.dir;
+      pathRef.current = [];
+    }
+    localPeerRef.current = localPeer;
+  }, [localPeer]);
+
+  useEffect(() => {
+    remotePeersRef.current = remotePeers;
+  }, [remotePeers]);
+
+  useEffect(() => {
+    speakingMapRef.current = speakingMap;
+  }, [speakingMap]);
+
+  useEffect(() => {
+    onMoveRef.current = onMove;
+    onInteractRef.current = onInteract;
+    onScreenPosRef.current = onScreenPositionUpdate;
+  }, [onMove, onInteract, onScreenPositionUpdate]);
+
+  // Keyboard listeners (bound once via refs)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't intercept typing in inputs
@@ -73,9 +112,9 @@ export function SpaceCanvas({
       keysRef.current[e.code] = true;
 
       // Interaction trigger: E or Space or Enter
-      if ((e.code === "KeyE" || e.code === "Space" || e.code === "Enter") && nearbyObject) {
+      if ((e.code === "KeyE" || e.code === "Space" || e.code === "Enter") && nearbyObjectRef.current) {
         e.preventDefault();
-        onInteract(nearbyObject);
+        onInteractRef.current(nearbyObjectRef.current);
       }
     };
 
@@ -89,7 +128,7 @@ export function SpaceCanvas({
       window.removeEventListener("keydown", handleKeyDown);
       window.removeEventListener("keyup", handleKeyUp);
     };
-  }, [nearbyObject, onInteract]);
+  }, []);
 
   // Handle Canvas Click or Tap for BFS Pathfinding
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
@@ -144,12 +183,23 @@ export function SpaceCanvas({
     }
   };
 
-  // Main 60Hz Render & Game Loop
+  // Main 60Hz Render & Game Loop (mounted once per map)
   useEffect(() => {
     let animId: number;
     let tick = 0;
+    let lastMoveSent = {
+      x: localPeerRef.current.x,
+      y: localPeerRef.current.y,
+      dir: localPeerRef.current.dir,
+      isMoving: false,
+      zoneId: "open_desks",
+      at: 0,
+    };
 
     const loop = () => {
+      animId = requestAnimationFrame(loop);
+      if (document.hidden) return;
+
       tick++;
       const canvas = canvasRef.current;
       if (!canvas) return;
@@ -252,15 +302,33 @@ export function SpaceCanvas({
       pos.x = currentTileX;
       pos.y = currentTileY;
 
-      // Check current zone
+      // Check current zone (only update React state when zone ID actually changes)
       const curZone = getZoneAt(currentTileX, currentTileY, map.zones);
-      if (curZone?.id !== activeZone?.id) {
+      const curZoneId = curZone?.id || "open_desks";
+      if ((curZone?.id ?? null) !== activeZoneIdRef.current) {
+        activeZoneIdRef.current = curZone?.id ?? null;
         setActiveZone(curZone);
       }
 
-      // Emit movement updates throttled every 3 frames (~20Hz)
-      if (tick % 3 === 0) {
-        onMove(currentTileX, currentTileY, pos.dir, pos.isMoving, curZone?.id || "open_desks");
+      // Emit movement updates only on state change, throttled (~10Hz while walking, immediate on stop)
+      const now = performance.now();
+      const moveChanged =
+        currentTileX !== lastMoveSent.x ||
+        currentTileY !== lastMoveSent.y ||
+        pos.dir !== lastMoveSent.dir ||
+        pos.isMoving !== lastMoveSent.isMoving ||
+        curZoneId !== lastMoveSent.zoneId;
+
+      if (moveChanged && (!pos.isMoving || now - lastMoveSent.at >= 95)) {
+        lastMoveSent = {
+          x: currentTileX,
+          y: currentTileY,
+          dir: pos.dir,
+          isMoving: pos.isMoving,
+          zoneId: curZoneId,
+          at: now,
+        };
+        onMoveRef.current(currentTileX, currentTileY, pos.dir, pos.isMoving, curZoneId);
       }
 
       // Check proximity to interactive objects (< 1.8 tiles distance)
@@ -272,7 +340,10 @@ export function SpaceCanvas({
           break;
         }
       }
-      setNearbyObject(closestObj);
+      if ((closestObj?.id ?? null) !== (nearbyObjectRef.current?.id ?? null)) {
+        nearbyObjectRef.current = closestObj;
+        setNearbyObject(closestObj);
+      }
 
       // 3. Smooth Camera Follow
       const camera = cameraRef.current;
@@ -305,54 +376,55 @@ export function SpaceCanvas({
       // Draw Interactive Objects (with glowing outlines/icons)
       drawObjects(ctx, map.objects, tick, closestObj);
 
+      const curLocal = localPeerRef.current;
+      const curRemotes = remotePeersRef.current;
+      const curSpeaking = speakingMapRef.current;
+
       // Draw Remote Coworkers
-      for (const peer of remotePeers) {
-        const isSpeaking = !!speakingMap[peer.id];
+      for (const peer of curRemotes) {
+        const isSpeaking = !!curSpeaking[peer.id];
         drawAvatar(ctx, peer.x * 16, peer.y * 16, peer.avatarColor, peer.dir, peer.isMoving, tick, isSpeaking, peer.name, peer.status, false);
       }
 
       // Draw Local Player Avatar
-      const localSpeaking = !!speakingMap["local"];
+      const localSpeaking = !!curSpeaking["local"];
       drawAvatar(
         ctx,
         Math.round(pos.pixelX),
         Math.round(pos.pixelY),
-        localPeer.avatarColor,
+        curLocal.avatarColor,
         pos.dir,
         pos.isMoving,
         tick,
         localSpeaking,
-        localPeer.name + " (You)",
-        localPeer.status,
+        curLocal.name + " (You)",
+        curLocal.status,
         true
       );
 
       ctx.restore();
 
-      // 5. Calculate screen positions for floating video bubbles / UI overlays
-      if (onScreenPositionUpdate) {
-        const screenPositions: Record<string, { screenX: number; screenY: number; inView: boolean }> = {};
-        const allPeers = [localPeer, ...remotePeers];
+      // 5. Push screen positions for floating video bubbles directly to zero-rerender DOM store
+      const screenPositions: Record<string, ScreenPosition> = {};
+      const allPeers = [curLocal, ...curRemotes];
 
-        for (const p of allPeers) {
-          const worldPx = p.id === localPeer.id ? pos.pixelX + 8 : p.x * 16 + 8;
-          const worldPy = p.id === localPeer.id ? pos.pixelY + 8 : p.y * 16 + 8;
+      for (const p of allPeers) {
+        const worldPx = p.id === curLocal.id ? pos.pixelX + 8 : p.x * 16 + 8;
+        const worldPy = p.id === curLocal.id ? pos.pixelY + 8 : p.y * 16 + 8;
 
-          const screenX = (worldPx - camera.x) * (camera.zoom / dpr) + displayWidth / 2;
-          const screenY = (worldPy - camera.y) * (camera.zoom / dpr) + displayHeight / 2;
+        const screenX = (worldPx - camera.x) * (camera.zoom / dpr) + displayWidth / 2;
+        const screenY = (worldPy - camera.y) * (camera.zoom / dpr) + displayHeight / 2;
 
-          const inView = screenX >= -50 && screenX <= displayWidth + 50 && screenY >= -50 && screenY <= displayHeight + 50;
-          screenPositions[p.id] = { screenX, screenY, inView };
-        }
-        onScreenPositionUpdate(screenPositions);
+        const inView = screenX >= -50 && screenX <= displayWidth + 50 && screenY >= -50 && screenY <= displayHeight + 50;
+        screenPositions[p.id] = { screenX, screenY, inView };
       }
-
-      animId = requestAnimationFrame(loop);
+      screenPositionsStore.update(screenPositions);
+      onScreenPosRef.current?.(screenPositions);
     };
 
     animId = requestAnimationFrame(loop);
     return () => cancelAnimationFrame(animId);
-  }, [map, localPeer, remotePeers, speakingMap, onMove, onScreenPositionUpdate, activeZone]);
+  }, [map]);
 
   return (
     <div className="relative w-full h-full overflow-hidden select-none bg-[#0B0C14]">
