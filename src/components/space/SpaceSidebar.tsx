@@ -62,21 +62,21 @@ export function SpaceSidebar({
   return (
     <aside
       aria-hidden={!isOpen}
-      className={`fixed md:relative top-0 right-0 z-30 h-full bg-surface border-border flex flex-col transition-all duration-200 ease-out flex-shrink-0 ${
+      className={`fixed top-14 right-3 bottom-16 z-30 w-[calc(100vw-1.5rem)] max-w-[19rem] rounded-2xl bg-surface/92 backdrop-blur-xl border border-border/80 shadow-arcade flex flex-col transition-all duration-200 ease-out ${
         isOpen
-          ? "w-80 translate-x-0 border-l-2 opacity-100"
-          : "w-80 translate-x-full md:w-0 md:translate-x-0 md:border-l-0 md:overflow-hidden md:opacity-0 md:pointer-events-none"
+          ? "translate-x-0 opacity-100 pointer-events-auto"
+          : "translate-x-[calc(100%+1rem)] opacity-0 pointer-events-none"
       }`}
     >
-      {/* Sidebar Header & Tab Navigation */}
-      <div className="h-14 border-b border-border px-3 flex items-center justify-between min-w-[20rem]">
+      {/* Compact Drawer Header & Tab Navigation */}
+      <div className="h-11 border-b border-border/70 px-2.5 flex items-center justify-between gap-2 flex-shrink-0">
         <div className="flex items-center gap-1">
           <button
             type="button"
             onClick={() => setActiveTab("people")}
-            className={`px-2.5 py-1 text-xs font-display rounded-control transition-colors ${
+            className={`px-2 py-1 text-[11px] font-display rounded-lg transition-colors ${
               activeTab === "people"
-                ? "bg-surface-2 text-text font-bold border border-border"
+                ? "bg-surface-2 text-text font-bold border border-border/70"
                 : "text-text-muted hover:text-text"
             }`}
           >
@@ -85,9 +85,9 @@ export function SpaceSidebar({
           <button
             type="button"
             onClick={() => setActiveTab("rooms")}
-            className={`px-2.5 py-1 text-xs font-display rounded-control transition-colors ${
+            className={`px-2 py-1 text-[11px] font-display rounded-lg transition-colors ${
               activeTab === "rooms"
-                ? "bg-surface-2 text-text font-bold border border-border"
+                ? "bg-surface-2 text-text font-bold border border-border/70"
                 : "text-text-muted hover:text-text"
             }`}
           >
@@ -96,15 +96,15 @@ export function SpaceSidebar({
           <button
             type="button"
             onClick={() => setActiveTab("chat")}
-            className={`px-2.5 py-1 text-xs font-display rounded-control transition-colors flex items-center gap-1.5 ${
+            className={`px-2 py-1 text-[11px] font-display rounded-lg transition-colors flex items-center gap-1 ${
               activeTab === "chat"
-                ? "bg-surface-2 text-text font-bold border border-border"
+                ? "bg-surface-2 text-text font-bold border border-border/70"
                 : "text-text-muted hover:text-text"
             }`}
           >
             <span>Chat</span>
             {unreadChatCount > 0 ? (
-              <span className="px-1.5 min-w-[1.1rem] h-4 rounded-full bg-accent text-bg text-[10px] font-bold flex items-center justify-center leading-none">
+              <span className="px-1.5 min-w-[1rem] h-3.5 rounded-full bg-accent text-bg text-[9px] font-bold flex items-center justify-center leading-none">
                 {unreadChatCount > 99 ? "99+" : unreadChatCount}
               </span>
             ) : (
@@ -118,12 +118,13 @@ export function SpaceSidebar({
         <button
           type="button"
           onClick={onClose}
-          className="text-text-muted hover:text-text hover:bg-surface-2 p-1.5 rounded-control transition-colors"
-          aria-label="Collapse sidebar"
-          title="Collapse Sidebar (B)"
+          className="text-text-muted hover:text-text hover:bg-surface-2 p-1 rounded-lg transition-colors"
+          aria-label="Close panel"
+          title="Close Panel (B)"
         >
           <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="m9 18 6-6-6-6" />
+            <path d="M18 6 6 18" />
+            <path d="m6 6 12 12" />
           </svg>
         </button>
       </div>

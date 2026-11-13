@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import Link from "next/link";
 import {
   OfficeTilemap,
   OFFICE_ZONES,
@@ -21,11 +22,9 @@ import { SpaceControls } from "@/components/space/SpaceControls";
 import { SpaceSidebar, SidebarTab } from "@/components/space/SpaceSidebar";
 import { OfficeMinimap } from "@/components/space/OfficeMinimap";
 import { PeerReactionsOverlay } from "@/components/space/PeerReactionsOverlay";
-import { PreJoinLobbyModal } from "@/components/space/PreJoinLobbyModal";
 import {
   ActivePeerReaction,
   OFFICE_REACTIONS,
-  OFFICE_STATUS_PRESETS,
   OfficeReactionPreset,
   pruneExpiredReactions,
 } from "@/lib/space/officeReactions";
@@ -37,14 +36,10 @@ import {
 } from "@/lib/space/officeThemes";
 import {
   IconCheck,
-  IconCoffee,
-  IconCompress,
-  IconDoor,
-  IconExpand,
   IconLink,
   IconMic,
   IconScreenShare,
-  IconSidebarPanel,
+  IconUsers,
 } from "@/components/space/SpaceIcons";
 import { FloatingVideoBubbles } from "@/components/space/FloatingVideoBubbles";
 import { VideoDock } from "@/components/space/VideoDock";
@@ -127,24 +122,7 @@ export function SpaceView({
   const [themeId, setThemeId] = useState<OfficeThemeId>("midnight");
   const [audioScope, setAudioScope] = useState<AudioScope>("office");
   const [peerReactions, setPeerReactions] = useState<Record<string, ActivePeerReaction>>({});
-  const [preJoinOpen, setPreJoinOpen] = useState(false);
   const [activeDesk, setActiveDesk] = useState<InteractiveObject | null>(null);
-
-  // Open sidebar by default on desktop viewports while staying collapsed on mobile
-  useEffect(() => {
-    if (typeof window !== "undefined" && window.innerWidth >= 768) {
-      setIsSidebarOpen(true);
-    }
-  }, []);
-
-  // Show Pre-Join device & avatar check once per session for each room
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const key = `forgespace_lobby_${spaceSlug}`;
-    if (!window.sessionStorage.getItem(key)) {
-      setPreJoinOpen(true);
-    }
-  }, [spaceSlug]);
 
   // Periodically clear expired overhead reactions
   useEffect(() => {
@@ -176,6 +154,7 @@ export function SpaceView({
   const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [coffeeBoostNotice, setCoffeeBoostNotice] = useState(false);
   const [inviteCopied, setInviteCopied] = useState(false);
+  const [copyStatusText, setCopyStatusText] = useState("");
 
   // Fullscreen state (supports native Fullscreen API with CSS immersive fallback)
   const spaceContainerRef = useRef<HTMLDivElement | null>(null);
@@ -857,24 +836,23 @@ export function SpaceView({
     return dist <= 8 || p.zoneId === localPeer.zoneId;
   });
 
-  const handleCopyInvite = () => {
-    if (typeof window !== "undefined") {
-      navigator.clipboard?.writeText(window.location.href);
+  const handleCopyInvite = async () => {
+    if (typeof window === "undefined") return;
+    try {
+      await navigator.clipboard.writeText(window.location.href);
       setInviteCopied(true);
-      setTimeout(() => setInviteCopied(false), 2500);
+      setCopyStatusText("Invite link copied");
+      setTimeout(() => {
+        setInviteCopied(false);
+        setCopyStatusText("");
+      }, 2500);
+    } catch {
+      setCopyStatusText("Failed to copy invite link");
     }
   };
 
   const activePresenter = remotePeers.find((p) => p.media.screen) || (localPeer.media.screen ? localPeer : null);
   const activePresenterStream = activePresenter ? streamsMap[activePresenter.id] || webrtcRef.current?.getLocalStream() || null : null;
-
-  const dismissLobby = () => {
-    void webrtcRef.current?.resumeAudio();
-    setPreJoinOpen(false);
-    if (typeof window !== "undefined") {
-      window.sessionStorage.setItem(`forgespace_lobby_${spaceSlug}`, "1");
-    }
-  };
 
   return (
     <div
@@ -883,147 +861,123 @@ export function SpaceView({
       className={
         isFullscreen
           ? "fixed inset-0 z-50 w-screen h-dvh flex overflow-hidden bg-bg text-text"
-          : "relative w-full h-[calc(100vh-3.5rem)] md:h-[calc(100vh-4rem)] flex overflow-hidden bg-bg text-text"
+          : "fixed inset-0 z-10 w-screen h-dvh flex overflow-hidden bg-bg text-text"
       }
     >
-      {/* Center Floor Area (3D or 2D) */}
+      {/* Full-Viewport Floor Area (3D or 2D) */}
       <div className="relative flex-1 h-full flex flex-col min-w-0">
-        {/* Single Slim Top Office HUD Bar */}
-        <div className="h-12 border-b border-border bg-surface/85 backdrop-blur-md px-3 sm:px-4 flex items-center justify-between gap-2 z-10 flex-shrink-0">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
-            <h1 className="font-display text-sm md:text-base font-bold text-text truncate">
+        {/* Minimalist Floating Top-Left HUD Cluster */}
+        <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 max-w-[calc(100vw-11rem)] sm:max-w-[55vw]">
+          <div className="h-8 pl-1.5 pr-2.5 rounded-full bg-surface/75 backdrop-blur-md border border-border/70 flex items-center gap-1.5 min-w-0 shadow-sm">
+            <Link
+              href="/spaces"
+              aria-label="Back to offices"
+              title="Back to Offices"
+              className="w-5 h-5 rounded-full hover:bg-surface-2 flex items-center justify-center text-text-muted hover:text-text transition-colors flex-shrink-0"
+            >
+              <svg
+                className="w-3.5 h-3.5"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+              >
+                <path d="m15 18-6-6 6-6" />
+              </svg>
+            </Link>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
+            <h1 className="font-display text-xs font-bold text-text truncate">
               {spaceName}
             </h1>
-            <select
-              aria-label="Your office status"
-              value={localPeer.status}
-              onChange={(e) => handleUpdateStatus(e.target.value)}
-              className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[11px] font-sans bg-surface-2 text-accent-2 border border-border hover:border-accent focus:outline-none cursor-pointer"
-            >
-              {!OFFICE_STATUS_PRESETS.includes(localPeer.status) && (
-                <option value={localPeer.status}>{localPeer.status}</option>
-              )}
-              {OFFICE_STATUS_PRESETS.map((preset) => (
-                <option key={preset} value={preset}>
-                  {preset}
-                </option>
-              ))}
-            </select>
           </div>
 
-          {/* Quick Room Teleport Pills (Desktop) */}
-          <div className="hidden lg:flex items-center gap-1.5 flex-shrink-0">
-            <button
-              type="button"
-              onClick={() => handleWarpToRoom(OFFICE_ZONES[2]!)}
-              className="px-2.5 py-1 rounded-full text-[11px] font-display font-semibold bg-surface-2 border border-border text-accent hover:border-accent flex items-center gap-1 transition-colors"
-            >
-              <IconDoor className="w-3 h-3" />
-              <span>Boardroom</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => handleWarpToRoom(OFFICE_ZONES[3]!)}
-              className="px-2.5 py-1 rounded-full text-[11px] font-display font-semibold bg-surface-2 border border-border text-[#B84DFF] hover:border-[#B84DFF] transition-colors"
-            >
-              War Room
-            </button>
-            <button
-              type="button"
-              onClick={() => handleWarpToRoom(OFFICE_ZONES[4]!)}
-              className="px-2.5 py-1 rounded-full text-[11px] font-display font-semibold bg-surface-2 border border-border text-amber-400 hover:border-amber-400 flex items-center gap-1 transition-colors"
-            >
-              <IconCoffee className="w-3 h-3" />
-              <span>Cafe</span>
-            </button>
-          </div>
-
-          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
-            <button
-              type="button"
-              onClick={handleToggleAudioScope}
-              aria-pressed={audioScope === "office"}
-              title={
-                audioScope === "office"
-                  ? "Office Audio: hear everyone on the open floor (click for Proximity)"
-                  : "Proximity Audio: hear coworkers within 8 tiles (click for Office Audio)"
-              }
-              className={`px-2.5 py-1 text-xs border rounded-control flex items-center gap-1.5 font-display font-semibold transition-colors ${
-                audioScope === "office"
-                  ? "bg-emerald-500/15 border-emerald-400/50 text-emerald-300 hover:bg-emerald-500/25"
-                  : "bg-surface-2 hover:bg-surface border-border text-muted hover:text-text hover:border-accent"
-              }`}
-            >
-              <IconMic className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">
-                {audioScope === "office" ? "Office Audio" : "Proximity"}
-              </span>
-            </button>
-            {activePresenter && (
-              <button
-                type="button"
-                onClick={() => setTheaterModalOpen(true)}
-                className="px-2.5 py-1 text-xs font-display font-semibold bg-accent text-bg rounded-control hover:brightness-110 flex items-center gap-1 shadow-sm animate-pulse"
-              >
-                <IconScreenShare className="w-3.5 h-3.5" />
-                <span className="hidden sm:inline">Watch Screen</span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={handleCopyInvite}
-              title="Copy room invite link"
-              className="px-2.5 py-1 text-xs bg-surface-2 hover:bg-surface border border-border hover:border-accent text-accent-2 rounded-control flex items-center gap-1.5 transition-colors"
-            >
-              {inviteCopied ? (
-                <IconCheck className="w-3.5 h-3.5" />
-              ) : (
-                <IconLink className="w-3.5 h-3.5" />
-              )}
-              <span className="hidden sm:inline">{inviteCopied ? "Copied" : "Invite"}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => void handleToggleFullscreen()}
-              aria-pressed={isFullscreen}
-              title={isFullscreen ? "Exit Fullscreen (F)" : "Enter Fullscreen (F)"}
-              className={`px-2.5 py-1 text-xs border rounded-control flex items-center gap-1.5 font-display font-semibold transition-colors ${
-                isFullscreen
-                  ? "bg-accent/20 border-accent text-accent hover:bg-accent/30"
-                  : "bg-surface-2 hover:bg-surface border-border text-text hover:border-accent"
-              }`}
-            >
-              {isFullscreen ? (
-                <IconCompress className="w-3.5 h-3.5" />
-              ) : (
-                <IconExpand className="w-3.5 h-3.5" />
-              )}
-              <span className="hidden md:inline">{isFullscreen ? "Exit" : "Fullscreen"}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsSidebarOpen((v) => !v)}
-              aria-pressed={isSidebarOpen}
-              title={isSidebarOpen ? "Collapse Sidebar (B)" : "Open Sidebar (B)"}
-              className={`relative px-2.5 py-1 text-xs border rounded-control flex items-center gap-1.5 transition-colors ${
-                isSidebarOpen
-                  ? "bg-accent/15 border-accent text-accent"
-                  : "bg-surface-2 hover:bg-surface border-border text-text hover:border-accent"
-              }`}
-            >
-              <IconSidebarPanel className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">
-                {isSidebarOpen ? "Hide" : `${remotePeers.length + 1} Online`}
-              </span>
-              {unreadChatCount > 0 && (
-                <span className="px-1.5 min-w-[1rem] h-4 rounded-full bg-accent text-bg text-[10px] font-bold flex items-center justify-center leading-none">
-                  {unreadChatCount > 99 ? "99+" : unreadChatCount}
-                </span>
-              )}
-            </button>
-          </div>
+          <OfficeMinimap
+            map={map}
+            localPeer={localPeer}
+            remotePeers={remotePeers}
+            onWarpToRoom={handleWarpToRoom}
+            onWarpToCoords={handleWarpToCoords}
+          />
         </div>
+
+        {/* Minimalist Floating Top-Right Utility Cluster */}
+        <div className="absolute top-3 right-3 z-20 flex items-center gap-1.5">
+          {activePresenter && (
+            <button
+              type="button"
+              onClick={() => setTheaterModalOpen(true)}
+              className="h-8 px-2.5 text-[11px] font-display font-semibold bg-accent text-bg rounded-full hover:brightness-110 flex items-center gap-1 shadow-sm animate-pulse"
+            >
+              <IconScreenShare className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Watch</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={handleToggleAudioScope}
+            aria-pressed={audioScope === "office"}
+            aria-label="Office-wide audio mode"
+            title={
+              audioScope === "office"
+                ? "Office Audio: hear everyone on open floor (click for Proximity)"
+                : "Proximity Audio: hear coworkers within 8 tiles (click for Office)"
+            }
+            className={`h-8 px-2.5 text-[11px] backdrop-blur-md border rounded-full flex items-center gap-1.5 font-display font-semibold transition-colors shadow-sm ${
+              audioScope === "office"
+                ? "bg-emerald-500/20 border-emerald-400/50 text-emerald-300 hover:bg-emerald-500/30"
+                : "bg-surface/75 hover:bg-surface/95 border-border/70 text-text-muted hover:text-text"
+            }`}
+          >
+            <IconMic className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">
+              {audioScope === "office" ? "Office" : "Prox"}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => void handleCopyInvite()}
+            aria-label="Copy invite link"
+            title="Copy room invite link"
+            className="h-8 px-2.5 text-[11px] bg-surface/75 hover:bg-surface/95 backdrop-blur-md border border-border/70 hover:border-border text-text rounded-full flex items-center gap-1.5 transition-colors shadow-sm"
+          >
+            {inviteCopied ? (
+              <IconCheck className="w-3.5 h-3.5 text-emerald-400" />
+            ) : (
+              <IconLink className="w-3.5 h-3.5 text-accent-2" />
+            )}
+            <span className="hidden sm:inline">{inviteCopied ? "Copied" : "Invite"}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsSidebarOpen((v) => !v)}
+            aria-pressed={isSidebarOpen}
+            aria-label="People and chat panel"
+            title={isSidebarOpen ? "Close Panel (B)" : "People, Rooms & Chat (B)"}
+            className={`relative h-8 px-2.5 text-[11px] backdrop-blur-md border rounded-full flex items-center gap-1.5 font-display font-semibold transition-colors shadow-sm ${
+              isSidebarOpen
+                ? "bg-accent/20 border-accent text-accent"
+                : "bg-surface/75 hover:bg-surface/95 border-border/70 hover:border-border text-text"
+            }`}
+          >
+            <IconUsers className="w-3.5 h-3.5" />
+            <span>{remotePeers.length + 1}</span>
+            {unreadChatCount > 0 && (
+              <span className="px-1.5 min-w-[1rem] h-4 rounded-full bg-accent text-bg text-[9px] font-bold flex items-center justify-center leading-none">
+                {unreadChatCount > 99 ? "99+" : unreadChatCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        <p role="status" className="sr-only">
+          {copyStatusText}
+        </p>
 
         {/* Floor Canvas World: 3D Isometric WebGL or 2D Top-Down */}
         <div className="relative flex-1 w-full min-h-0">
@@ -1048,17 +1002,6 @@ export function SpaceView({
             />
           )}
 
-          {/* Top-Left Live Interactive Office Minimap */}
-          <div className="absolute top-3 left-3 z-20">
-            <OfficeMinimap
-              map={map}
-              localPeer={localPeer}
-              remotePeers={remotePeers}
-              onWarpToRoom={handleWarpToRoom}
-              onWarpToCoords={handleWarpToCoords}
-            />
-          </div>
-
           {/* Floating Overhead Avatar Reactions (0 React loop churn) */}
           <PeerReactionsOverlay reactions={peerReactions} />
 
@@ -1076,27 +1019,25 @@ export function SpaceView({
 
           {/* Coffee Speed Boost Banner */}
           {coffeeBoostNotice && (
-            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 px-4 py-1.5 bg-amber-500/90 text-black font-display text-xs font-bold rounded-full shadow-arcade animate-bounce">
+            <div className="absolute top-14 left-1/2 -translate-x-1/2 z-30 px-4 py-1.5 bg-amber-500/90 text-black font-display text-xs font-bold rounded-full shadow-arcade animate-bounce">
               ESPRESSO BOOST ACTIVATED (+50% Speed)
             </div>
           )}
 
-          {/* Floating Controls Bar (Bottom Center) */}
+          {/* Floating Controls Dock (Bottom Center) */}
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 max-w-[96vw]">
             <SpaceControls
               isAudioMuted={!localPeer.media.audio}
               isVideoMuted={!localPeer.media.video}
               isScreenSharing={localPeer.media.screen}
-              isSidebarOpen={isSidebarOpen}
-              unreadChatCount={unreadChatCount}
               isFullscreen={isFullscreen}
               videoLayout={videoLayout}
               viewMode={viewMode}
               themeId={themeId}
+              audioScope={audioScope}
               onToggleAudio={handleToggleAudio}
               onToggleVideo={handleToggleVideo}
               onToggleScreenShare={handleToggleScreenShare}
-              onToggleSidebar={() => setIsSidebarOpen((v) => !v)}
               onToggleFullscreen={() => void handleToggleFullscreen()}
               onToggleVideoLayout={() =>
                 setVideoLayout((l) => (l === "floating" ? "docked" : "floating"))
@@ -1104,6 +1045,7 @@ export function SpaceView({
               onToggleViewMode={() =>
                 setViewMode((m) => (m === "3d" ? "2d" : "3d"))
               }
+              onToggleAudioScope={handleToggleAudioScope}
               onCycleTheme={handleCycleTheme}
               onTriggerReaction={handleTriggerReaction}
               onOpenAvatarCustomizer={() => setAvatarModalOpen(true)}
@@ -1114,8 +1056,8 @@ export function SpaceView({
           </div>
         </div>
 
-        {/* Mobile & Docked Video Strip */}
-        {(videoLayout === "docked" || typeof window !== "undefined") && (
+        {/* Bottom Video Strip (only when explicitly docked, or on mobile with active coworkers) */}
+        {(videoLayout === "docked" || remotePeers.length > 0) && (
           <div className={videoLayout === "docked" ? "block" : "md:hidden"}>
             <VideoDock
               localPeer={localPeer}
@@ -1236,25 +1178,6 @@ export function SpaceView({
           </div>
         </div>
       </ArcadeDialog>
-
-      {/* Pre-Join Lobby & Camera Check Modal */}
-      <PreJoinLobbyModal
-        open={preJoinOpen}
-        spaceName={spaceName}
-        initialName={localPeer.name}
-        initialColor={localPeer.avatarColor}
-        initialStatus={localPeer.status}
-        isAudioEnabled={localPeer.media.audio}
-        isVideoEnabled={localPeer.media.video}
-        localStream={streamsMap["local"] ?? webrtcRef.current?.getLocalStream() ?? null}
-        onToggleAudio={handleToggleAudio}
-        onToggleVideo={handleToggleVideo}
-        onConfirm={(config) => {
-          handleSaveAvatarCustomization(config);
-          dismissLobby();
-        }}
-        onClose={dismissLobby}
-      />
 
       {/* Keyboard & Controls Help Modal */}
       <ArcadeDialog
