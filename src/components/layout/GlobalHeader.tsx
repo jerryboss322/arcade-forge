@@ -46,15 +46,25 @@ export function GlobalHeader() {
     );
   };
 
+  const NAV_LINKS = [
+    { href: "/spaces", label: "Offices" },
+    { href: "/features", label: "Features" },
+    { href: "/whiteboard", label: "Whiteboard" },
+    { href: "/schedule", label: "Schedule" },
+    { href: "/pulse", label: "Pulse" },
+    { href: "/pricing", label: "Pricing" },
+    { href: "/docs", label: "Guide" },
+  ];
+
   return (
     <>
       <header className="sticky top-0 z-40 h-14 md:h-16 bg-bg border-b-2 border-border">
         <div className="max-w-[1280px] mx-auto h-full px-4 md:px-8 flex items-center justify-between gap-4">
-          {/* Left: Logo + Nav Links */}
-          <div className="flex items-center gap-6">
+          {/* Left: Logo + Multi-Page Nav Links */}
+          <div className="flex items-center gap-5">
             <Link
               href="/"
-              className="flex items-center gap-2.5 group focus:outline-none"
+              className="flex items-center gap-2.5 group focus:outline-none flex-shrink-0"
             >
               <span className="w-8 h-8 rounded-control bg-accent border-2 border-black shadow-arcade-sm flex items-center justify-center font-display text-bg font-bold text-sm group-hover:-translate-y-0.5 transition-transform">
                 FS
@@ -64,49 +74,27 @@ export function GlobalHeader() {
               </span>
             </Link>
 
-            <nav className="hidden md:flex items-center gap-1">
-              <Link
-                href="/"
-                className={`px-3 py-1.5 rounded-control text-sm font-semibold transition-colors ${
-                  pathname === "/"
-                    ? "bg-surface-2 text-text border-2 border-border"
-                    : "text-text-muted hover:text-text"
-                }`}
-              >
-                Offices
-              </Link>
-              <Link
-                href="/space/acme-hq"
-                className={`px-3 py-1.5 rounded-control text-sm font-semibold transition-colors flex items-center gap-1.5 ${
-                  pathname.startsWith("/space/acme-hq")
-                    ? "bg-surface-2 text-text border-2 border-border"
-                    : "text-text-muted hover:text-text"
-                }`}
-              >
-                <span>Demo HQ</span>
-                <span className="px-1.5 py-0.5 text-[10px] font-display rounded-full bg-emerald-400 text-bg font-bold">
-                  LIVE
-                </span>
-              </Link>
-              <Link
-                href="/#features"
-                className="px-3 py-1.5 rounded-control text-sm font-semibold text-text-muted hover:text-text transition-colors"
-              >
-                Features
-              </Link>
-              <Link
-                href="/#pricing"
-                className="px-3 py-1.5 rounded-control text-sm font-semibold text-text-muted hover:text-text transition-colors"
-              >
-                Pricing ($0 P2P)
-              </Link>
+            <nav className="hidden xl:flex items-center gap-1">
+              {NAV_LINKS.map((link) => (
+                <Link
+                  key={link.href}
+                  href={link.href}
+                  className={`px-2.5 py-1.5 rounded-control text-xs font-display font-semibold transition-colors ${
+                    pathname === link.href
+                      ? "bg-surface-2 text-accent border border-border shadow-sm"
+                      : "text-text-muted hover:text-text hover:bg-surface-2/60"
+                  }`}
+                >
+                  {link.label}
+                </Link>
+              ))}
             </nav>
           </div>
 
-          {/* Center: Quick Join Space Bar (max 380px wide) */}
+          {/* Center: Quick Join Space Bar (hidden on small screens) */}
           <form
             onSubmit={handleQuickJoin}
-            className="flex-1 max-w-[360px] hidden sm:block"
+            className="flex-1 max-w-[320px] hidden md:block"
           >
             <div className="relative flex items-center">
               <span className="absolute left-3 text-xs text-text-muted font-mono select-none">
@@ -116,13 +104,13 @@ export function GlobalHeader() {
                 type="text"
                 value={quickJoinCode}
                 onChange={(e) => setQuickJoinCode(e.target.value)}
-                placeholder="office-slug to join..."
+                placeholder="slug to join..."
                 aria-label="Quick join office"
-                className="w-full h-10 pl-16 pr-12 rounded-control bg-surface-2 border-2 border-border text-xs text-text placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors font-mono"
+                className="w-full h-9 pl-16 pr-12 rounded-control bg-surface-2 border-2 border-border text-xs text-text placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors font-mono"
               />
               <button
                 type="submit"
-                className="absolute right-1.5 px-2.5 py-1 text-[11px] font-display font-bold bg-accent text-bg rounded-control hover:brightness-110"
+                className="absolute right-1 px-2.5 py-1 text-[11px] font-display font-bold bg-accent text-bg rounded-control hover:brightness-110"
               >
                 Join
               </button>
@@ -130,13 +118,21 @@ export function GlobalHeader() {
           </form>
 
           {/* Right: + Create Office + User Dropdown */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
+            <Link
+              href="/space/acme-hq"
+              className="hidden sm:inline-flex px-3 py-1.5 rounded-control text-xs font-display font-bold bg-surface-2 border border-border text-text hover:border-accent items-center gap-1.5 transition-colors"
+            >
+              <span>Demo 3D</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            </Link>
+
             <button
               type="button"
               onClick={() => setCreateModalOpen(true)}
-              className="h-10 px-4 rounded-control bg-accent hover:brightness-110 text-bg font-semibold text-sm border-2 border-black shadow-arcade-sm active:translate-y-0.5 transition-all flex items-center gap-1.5"
+              className="h-9 px-3.5 rounded-control bg-accent hover:brightness-110 text-bg font-display font-bold text-xs border border-black shadow-arcade-sm active:translate-y-0.5 transition-all flex items-center gap-1"
             >
-              <span>+ Create Office</span>
+              <span>+ Create Space</span>
             </button>
 
             {/* Profile Dropdown */}
@@ -145,15 +141,15 @@ export function GlobalHeader() {
                 type="button"
                 onClick={() => setUserMenuOpen((v) => !v)}
                 aria-label="Account menu"
-                className="h-10 px-2.5 rounded-control bg-surface border-2 border-border hover:border-accent flex items-center gap-2 transition-colors"
+                className="h-9 px-2 rounded-control bg-surface border border-border hover:border-accent flex items-center gap-1.5 transition-colors"
               >
                 <span
-                  className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-bg border border-black"
+                  className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold text-bg border border-black"
                   style={{ backgroundColor: currentUser.avatarColor || "#37E6C4" }}
                 >
                   {currentUser.username.slice(0, 1).toUpperCase()}
                 </span>
-                <span className="hidden lg:inline text-xs font-semibold text-text">
+                <span className="hidden sm:inline text-xs font-semibold text-text">
                   @{currentUser.username}
                 </span>
               </button>
@@ -202,48 +198,74 @@ export function GlobalHeader() {
         </div>
       </header>
 
-      {/* Mobile Bottom Tab Bar */}
+      {/* Mobile Bottom Navigation Bar linking each page */}
       <nav
         aria-label="Mobile navigation"
-        className="md:hidden fixed bottom-0 left-0 right-0 z-40 h-14 bg-surface border-t-2 border-border flex items-center justify-around px-2"
+        className="xl:hidden fixed bottom-0 left-0 right-0 z-40 h-14 bg-surface/95 backdrop-blur-md border-t-2 border-border flex items-center justify-around px-1"
       >
         <Link
-          href="/"
-          className={`flex flex-col items-center justify-center py-1 px-3 rounded-control text-xs font-semibold ${
-            pathname === "/" ? "text-accent" : "text-text-muted"
+          href="/spaces"
+          className={`flex flex-col items-center justify-center py-1 px-2 text-[11px] font-display font-semibold ${
+            pathname === "/spaces" ? "text-accent" : "text-text-muted hover:text-text"
           }`}
         >
           <span>Offices</span>
         </Link>
         <Link
-          href="/space/acme-hq"
-          className={`flex flex-col items-center justify-center py-1 px-3 rounded-control text-xs font-semibold ${
-            pathname.startsWith("/space/acme-hq") ? "text-accent" : "text-text-muted"
+          href="/features"
+          className={`flex flex-col items-center justify-center py-1 px-2 text-[11px] font-display font-semibold ${
+            pathname === "/features" ? "text-accent" : "text-text-muted hover:text-text"
           }`}
         >
-          <span>Demo HQ</span>
+          <span>Features</span>
         </Link>
-        <button
-          type="button"
-          onClick={() => setCreateModalOpen(true)}
-          className="flex flex-col items-center justify-center py-1 px-3 rounded-control text-xs font-semibold text-accent"
+        <Link
+          href="/whiteboard"
+          className={`flex flex-col items-center justify-center py-1 px-2 text-[11px] font-display font-semibold ${
+            pathname === "/whiteboard" ? "text-accent" : "text-text-muted hover:text-text"
+          }`}
         >
-          <span>+ Create</span>
-        </button>
-        <button
-          type="button"
-          onClick={() => setUserMenuOpen((v) => !v)}
-          className="flex flex-col items-center justify-center py-1 px-3 rounded-control text-xs font-semibold text-text-muted"
+          <span>Board</span>
+        </Link>
+        <Link
+          href="/schedule"
+          className={`flex flex-col items-center justify-center py-1 px-2 text-[11px] font-display font-semibold ${
+            pathname === "/schedule" ? "text-accent" : "text-text-muted hover:text-text"
+          }`}
         >
-          <span>@{currentUser.username}</span>
-        </button>
+          <span>Syncs</span>
+        </Link>
+        <Link
+          href="/pulse"
+          className={`flex flex-col items-center justify-center py-1 px-2 text-[11px] font-display font-semibold ${
+            pathname === "/pulse" ? "text-accent" : "text-text-muted hover:text-text"
+          }`}
+        >
+          <span>Pulse</span>
+        </Link>
+        <Link
+          href="/pricing"
+          className={`flex flex-col items-center justify-center py-1 px-2 text-[11px] font-display font-semibold ${
+            pathname === "/pricing" ? "text-accent" : "text-text-muted hover:text-text"
+          }`}
+        >
+          <span>Pricing</span>
+        </Link>
+        <Link
+          href="/docs"
+          className={`flex flex-col items-center justify-center py-1 px-2 text-[11px] font-display font-semibold ${
+            pathname === "/docs" ? "text-accent" : "text-text-muted hover:text-text"
+          }`}
+        >
+          <span>Guide</span>
+        </Link>
       </nav>
 
       {/* Create Office Dialog */}
       <ArcadeDialog
         open={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
-        title="🏢 Create Virtual Office"
+        title="🏢 Create Virtual Office Floor"
         maxWidthClass="max-w-md"
       >
         <form onSubmit={handleCreateOffice} className="space-y-4">
