@@ -46,7 +46,10 @@ export class SpaceSignaling {
   private lastEdgeSendAt = 0;
   private lastEdgeCursor = 0;
   private pollInFlight = false;
+  private destroyed = false;
   private discoveredEdgePeers = new Set<string>();
+  private dataChannels = new Map<string, RTCDataChannel>();
+  private pageHideHandler: (() => void) | null = null;
   public localPeer: PeerState;
 
   constructor(
@@ -76,6 +79,8 @@ export class SpaceSignaling {
   }
 
   public broadcast(msg: SignalMessage): void {
+    if (this.destroyed) return;
+
     // 1. Send immediately via local BroadcastChannel (zero network cost)
     if (this.bc) {
       try {
@@ -85,7 +90,21 @@ export class SpaceSignaling {
       }
     }
 
-    // 2. Coalesce high-frequency peer_move messages for Edge API so multi-user HTTP stays light
+    // 2. Forward directly over open WebRTC DataChannels for low-latency P2P sync
+    if (this.dataChannels.size > 0 && msg.type !== "webrtc_signal") {
+      const payload = JSON.stringify(msg);
+      for (const [, dc] of this.dataChannels) {
+        if (dc.readyState === "open") {
+          try {
+            dc.send(payload);
+          } catch {
+            // Channel closing
+          }
+        }
+      }
+    }
+
+    // 3. Coalesce high-frequency peer_move messages for Edge API so multi-user HTTP stays light
     if (typeof window !== "undefined") {
       if (msg.type === "peer_move") {
         this.scheduleEdgeMoveFlush(msg);
@@ -93,6 +112,33 @@ export class SpaceSignaling {
         this.sendToEdge(msg).catch(() => {});
       }
     }
+  }
+
+  /**
+   * Registers an open peer WebRTC DataChannel to exchange real-time state P2P.
+   */
+  public attachDataChannel(peerId: string, channel: RTCDataChannel): void {
+    this.dataChannels.set(peerId, channel);
+    channel.onmessage = (event) => {
+      if (this.destroyed || typeof event.data !== "string") return;
+      try {
+        const parsed = JSON.parse(event.data) as SignalMessage;
+        if (parsed && parsed.type) {
+          this.onMessageCb(parsed);
+        }
+      } catch {
+        // Ignore malformed P2P frame
+      }
+    };
+    channel.onclose = () => {
+      if (this.dataChannels.get(peerId) === channel) {
+        this.dataChannels.delete(peerId);
+      }
+    };
+  }
+
+  public detachDataChannel(peerId: string): void {
+    this.dataChannels.delete(peerId);
   }
 
   private scheduleEdgeMoveFlush(msg: SignalMessage): void {
@@ -138,25 +184,26 @@ export class SpaceSignaling {
   }
 
   private scheduleFastPoll(): void {
-    if (this.fastPollTimer) return;
+    if (this.destroyed || this.fastPollTimer) return;
     this.fastPollTimer = setTimeout(() => {
       this.fastPollTimer = null;
       void this.pollEdge();
-    }, 150);
+    }, 120);
   }
 
   private async pollEdge(): Promise<void> {
-    if (this.pollInFlight) return;
+    if (this.destroyed || this.pollInFlight) return;
     if (typeof document !== "undefined" && document.hidden) return;
     this.pollInFlight = true;
     try {
       const res = await fetch(
-        `/api/space/peers?channel=${encodeURIComponent(this.channelName)}&senderId=${encodeURIComponent(this.localPeer.id)}&since=${this.lastEdgeCursor}`
+        `/api/space/peers?channel=${encodeURIComponent(this.channelName)}&senderId=${encodeURIComponent(this.localPeer.id)}&since=${this.lastEdgeCursor}`,
+        { cache: "no-store" }
       );
-      if (res.ok) {
+      if (res.ok && !this.destroyed) {
         const data = await res.json();
-        if (typeof data.serverTime === "number") {
-          this.lastEdgeCursor = data.serverTime;
+        if (typeof data.cursor === "number") {
+          this.lastEdgeCursor = data.cursor;
         }
         if (Array.isArray(data.peers)) {
           for (const peer of data.peers as PeerState[]) {
@@ -186,6 +233,29 @@ export class SpaceSignaling {
 
   private startHeartbeatSync(): void {
     if (typeof window === "undefined") return;
+
+    // Notify room on tab/window close so ghosts don't linger
+    this.pageHideHandler = () => {
+      const payload = JSON.stringify({
+        channel: this.channelName,
+        senderId: this.localPeer.id,
+        message: { type: "peer_leave", id: this.localPeer.id },
+      });
+      if (typeof navigator !== "undefined" && navigator.sendBeacon) {
+        navigator.sendBeacon(
+          "/api/space/peers",
+          new Blob([payload], { type: "application/json" })
+        );
+      }
+      if (this.bc) {
+        try {
+          this.bc.postMessage({ type: "peer_leave", id: this.localPeer.id });
+        } catch {
+          // Ignore close race
+        }
+      }
+    };
+    window.addEventListener("pagehide", this.pageHideHandler);
 
     // Send initial join and fetch active coworkers immediately
     this.broadcast({ type: "peer_join", peer: this.localPeer });
@@ -305,11 +375,18 @@ export class SpaceSignaling {
   }
 
   public destroy(): void {
+    if (this.destroyed) return;
+    this.broadcast({ type: "peer_leave", id: this.localPeer.id });
+    this.destroyed = true;
     if (this.pollInterval) clearInterval(this.pollInterval);
     if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
     if (this.moveFlushTimer) clearTimeout(this.moveFlushTimer);
     if (this.fastPollTimer) clearTimeout(this.fastPollTimer);
-    this.broadcast({ type: "peer_leave", id: this.localPeer.id });
+    if (this.pageHideHandler && typeof window !== "undefined") {
+      window.removeEventListener("pagehide", this.pageHideHandler);
+      this.pageHideHandler = null;
+    }
+    this.dataChannels.clear();
     if (this.bc) {
       this.bc.close();
       this.bc = null;
