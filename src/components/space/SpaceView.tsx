@@ -19,6 +19,32 @@ import { SpaceCanvas } from "@/components/space/SpaceCanvas";
 import { Space3DCanvas } from "@/components/space/Space3DCanvas";
 import { SpaceControls } from "@/components/space/SpaceControls";
 import { SpaceSidebar, SidebarTab } from "@/components/space/SpaceSidebar";
+import { OfficeMinimap } from "@/components/space/OfficeMinimap";
+import { PeerReactionsOverlay } from "@/components/space/PeerReactionsOverlay";
+import { PreJoinLobbyModal } from "@/components/space/PreJoinLobbyModal";
+import {
+  ActivePeerReaction,
+  OFFICE_REACTIONS,
+  OFFICE_STATUS_PRESETS,
+  OfficeReactionPreset,
+  pruneExpiredReactions,
+} from "@/lib/space/officeReactions";
+import {
+  OFFICE_THEMES,
+  OFFICE_THEME_LIST,
+  OfficeThemeId,
+  getThemeCssVars,
+} from "@/lib/space/officeThemes";
+import {
+  IconCheck,
+  IconCoffee,
+  IconCompress,
+  IconDoor,
+  IconExpand,
+  IconLink,
+  IconScreenShare,
+  IconSidebarPanel,
+} from "@/components/space/SpaceIcons";
 import { FloatingVideoBubbles } from "@/components/space/FloatingVideoBubbles";
 import { VideoDock } from "@/components/space/VideoDock";
 import { LoungeRadioModal } from "@/components/space/LoungeRadioModal";
@@ -97,6 +123,9 @@ export function SpaceView({
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("people");
   const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const [themeId, setThemeId] = useState<OfficeThemeId>("midnight");
+  const [peerReactions, setPeerReactions] = useState<Record<string, ActivePeerReaction>>({});
+  const [preJoinOpen, setPreJoinOpen] = useState(false);
   const [activeDesk, setActiveDesk] = useState<InteractiveObject | null>(null);
 
   // Open sidebar by default on desktop viewports while staying collapsed on mobile
@@ -105,6 +134,24 @@ export function SpaceView({
       setIsSidebarOpen(true);
     }
   }, []);
+
+  // Show Pre-Join device & avatar check once per session for each room
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const key = `forgespace_lobby_${spaceSlug}`;
+    if (!window.sessionStorage.getItem(key)) {
+      setPreJoinOpen(true);
+    }
+  }, [spaceSlug]);
+
+  // Periodically clear expired overhead reactions
+  useEffect(() => {
+    if (Object.keys(peerReactions).length === 0) return;
+    const timer = setInterval(() => {
+      setPeerReactions((prev) => pruneExpiredReactions(prev));
+    }, 500);
+    return () => clearInterval(timer);
+  }, [peerReactions]);
 
   // Clear unread chat badge whenever the chat tab is actively visible
   useEffect(() => {
@@ -200,7 +247,38 @@ export function SpaceView({
     setIsImmersiveFallback(true);
   }, [isImmersiveFallback]);
 
-  // Global keyboard shortcut: F toggles fullscreen, Esc exits CSS fallback
+  // Toggle Media Controls & Floor Reactions
+  const handleToggleAudio = useCallback(() => {
+    const unmuted = webrtcRef.current?.toggleAudio() ?? false;
+    setLocalPeer((prev) => {
+      const nextMedia = { ...prev.media, audio: unmuted };
+      signalingRef.current?.updateMedia({ audio: unmuted });
+      return { ...prev, media: nextMedia };
+    });
+  }, []);
+
+  const handleToggleVideo = useCallback(() => {
+    const active = webrtcRef.current?.toggleVideo() ?? false;
+    setLocalPeer((prev) => {
+      const nextMedia = { ...prev.media, video: active };
+      signalingRef.current?.updateMedia({ video: active });
+      return { ...prev, media: nextMedia };
+    });
+  }, []);
+
+  const handleTriggerReaction = useCallback((reaction: OfficeReactionPreset) => {
+    signalingRef.current?.sendReaction(reaction.emoji, reaction.label);
+  }, []);
+
+  const handleCycleTheme = useCallback(() => {
+    setThemeId((prev) => {
+      const idx = OFFICE_THEME_LIST.findIndex((t) => t.id === prev);
+      const next = OFFICE_THEME_LIST[(idx + 1) % OFFICE_THEME_LIST.length]!;
+      return next.id;
+    });
+  }, []);
+
+  // Global keyboard shortcuts: F fullscreen, B sidebar, M mic, V cam, ? help, 1-5 reactions
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -220,6 +298,21 @@ export function SpaceView({
       } else if (e.code === "KeyB") {
         e.preventDefault();
         setIsSidebarOpen((v) => !v);
+      } else if (e.code === "KeyM") {
+        e.preventDefault();
+        handleToggleAudio();
+      } else if (e.code === "KeyV") {
+        e.preventDefault();
+        handleToggleVideo();
+      } else if (e.key === "?") {
+        e.preventDefault();
+        setHelpModalOpen((v) => !v);
+      } else if (e.key >= "1" && e.key <= "5") {
+        const preset = OFFICE_REACTIONS[Number(e.key) - 1];
+        if (preset) {
+          e.preventDefault();
+          handleTriggerReaction(preset);
+        }
       } else if (e.code === "Escape" && isImmersiveFallback && !document.querySelector("dialog[open]")) {
         setIsImmersiveFallback(false);
       }
@@ -227,7 +320,13 @@ export function SpaceView({
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [handleToggleFullscreen, isImmersiveFallback]);
+  }, [
+    handleToggleFullscreen,
+    handleToggleAudio,
+    handleToggleVideo,
+    handleTriggerReaction,
+    isImmersiveFallback,
+  ]);
 
   // Stable refs to prevent tearing down WebRTC/Signaling on avatar movement
   const signalingRef = useRef<SpaceSignaling | null>(null);
@@ -339,6 +438,18 @@ export function SpaceView({
               )
             );
           }
+          break;
+
+        case "peer_reaction":
+          setPeerReactions((prev) => ({
+            ...prev,
+            [msg.id]: {
+              peerId: msg.id,
+              emoji: msg.emoji,
+              label: msg.label,
+              expiresAt: msg.expiresAt,
+            },
+          }));
           break;
 
         case "chat":
@@ -519,25 +630,7 @@ export function SpaceView({
     []
   );
 
-  // Toggle Media Controls
-  const handleToggleAudio = () => {
-    const unmuted = webrtcRef.current?.toggleAudio() ?? false;
-    setLocalPeer((prev) => {
-      const nextMedia = { ...prev.media, audio: unmuted };
-      signalingRef.current?.updateMedia({ audio: unmuted });
-      return { ...prev, media: nextMedia };
-    });
-  };
-
-  const handleToggleVideo = () => {
-    const active = webrtcRef.current?.toggleVideo() ?? false;
-    setLocalPeer((prev) => {
-      const nextMedia = { ...prev.media, video: active };
-      signalingRef.current?.updateMedia({ video: active });
-      return { ...prev, media: nextMedia };
-    });
-  };
-
+  // Toggle Screen Share
   const handleToggleScreenShare = async () => {
     const sharing = (await webrtcRef.current?.toggleScreenShare()) ?? false;
     setLocalPeer((prev) => {
@@ -545,6 +638,12 @@ export function SpaceView({
       signalingRef.current?.updateMedia({ screen: sharing });
       return { ...prev, media: nextMedia };
     });
+  };
+
+  // Warp avatar directly to coordinates (e.g. clicking OfficeMinimap)
+  const handleWarpToCoords = (x: number, y: number, zoneId: string) => {
+    officeAudio.playRoomEnterChime();
+    handleMove(x, y, "down", false, zoneId);
   };
 
   // Warp avatar to Room
@@ -647,43 +746,99 @@ export function SpaceView({
   const activePresenter = remotePeers.find((p) => p.media.screen) || (localPeer.media.screen ? localPeer : null);
   const activePresenterStream = activePresenter ? streamsMap[activePresenter.id] || webrtcRef.current?.getLocalStream() || null : null;
 
+  const dismissLobby = () => {
+    setPreJoinOpen(false);
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(`forgespace_lobby_${spaceSlug}`, "1");
+    }
+  };
+
   return (
     <div
       ref={spaceContainerRef}
+      style={getThemeCssVars(themeId) as React.CSSProperties}
       className={
         isFullscreen
-          ? "fixed inset-0 z-50 w-screen h-dvh flex overflow-hidden bg-bg"
-          : "relative w-full h-[calc(100vh-3.5rem)] md:h-[calc(100vh-4rem)] flex overflow-hidden bg-bg"
+          ? "fixed inset-0 z-50 w-screen h-dvh flex overflow-hidden bg-bg text-text"
+          : "relative w-full h-[calc(100vh-3.5rem)] md:h-[calc(100vh-4rem)] flex overflow-hidden bg-bg text-text"
       }
     >
       {/* Center Floor Area (3D or 2D) */}
       <div className="relative flex-1 h-full flex flex-col min-w-0">
-        {/* Top Header Information Bar */}
-        <div className="h-12 border-b border-border bg-surface/80 backdrop-blur-sm px-4 flex items-center justify-between gap-4 z-10 flex-shrink-0">
-          <div className="flex items-center gap-3">
-            <span className="w-3 h-3 rounded-full bg-emerald-400 animate-pulse" />
+        {/* Single Slim Top Office HUD Bar */}
+        <div className="h-12 border-b border-border bg-surface/85 backdrop-blur-md px-3 sm:px-4 flex items-center justify-between gap-2 z-10 flex-shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse flex-shrink-0" />
             <h1 className="font-display text-sm md:text-base font-bold text-text truncate">
               {spaceName}
             </h1>
-            <span className="hidden sm:inline-block px-2 py-0.5 rounded text-[10px] font-mono bg-surface-2 text-text-muted border border-border">
-              {viewMode === "3d" ? "WebGL 3D Engine" : "2D Classic View"}
-            </span>
+            <select
+              aria-label="Your office status"
+              value={localPeer.status}
+              onChange={(e) => handleUpdateStatus(e.target.value)}
+              className="hidden sm:inline-block px-2 py-0.5 rounded-full text-[11px] font-sans bg-surface-2 text-accent-2 border border-border hover:border-accent focus:outline-none cursor-pointer"
+            >
+              {!OFFICE_STATUS_PRESETS.includes(localPeer.status) && (
+                <option value={localPeer.status}>{localPeer.status}</option>
+              )}
+              {OFFICE_STATUS_PRESETS.map((preset) => (
+                <option key={preset} value={preset}>
+                  {preset}
+                </option>
+              ))}
+            </select>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Quick Room Teleport Pills (Desktop) */}
+          <div className="hidden lg:flex items-center gap-1.5 flex-shrink-0">
+            <button
+              type="button"
+              onClick={() => handleWarpToRoom(OFFICE_ZONES[2]!)}
+              className="px-2.5 py-1 rounded-full text-[11px] font-display font-semibold bg-surface-2 border border-border text-accent hover:border-accent flex items-center gap-1 transition-colors"
+            >
+              <IconDoor className="w-3 h-3" />
+              <span>Boardroom</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => handleWarpToRoom(OFFICE_ZONES[3]!)}
+              className="px-2.5 py-1 rounded-full text-[11px] font-display font-semibold bg-surface-2 border border-border text-[#B84DFF] hover:border-[#B84DFF] transition-colors"
+            >
+              War Room
+            </button>
+            <button
+              type="button"
+              onClick={() => handleWarpToRoom(OFFICE_ZONES[4]!)}
+              className="px-2.5 py-1 rounded-full text-[11px] font-display font-semibold bg-surface-2 border border-border text-amber-400 hover:border-amber-400 flex items-center gap-1 transition-colors"
+            >
+              <IconCoffee className="w-3 h-3" />
+              <span>Cafe</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
             {activePresenter && (
               <button
+                type="button"
                 onClick={() => setTheaterModalOpen(true)}
                 className="px-2.5 py-1 text-xs font-display font-semibold bg-accent text-bg rounded-control hover:brightness-110 flex items-center gap-1 shadow-sm animate-pulse"
               >
-                <span>🖥️ Watch Screen</span>
+                <IconScreenShare className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">Watch Screen</span>
               </button>
             )}
             <button
+              type="button"
               onClick={handleCopyInvite}
-              className="px-2.5 py-1 text-xs bg-surface-2 hover:bg-surface border border-border text-accent rounded-control flex items-center gap-1"
+              title="Copy room invite link"
+              className="px-2.5 py-1 text-xs bg-surface-2 hover:bg-surface border border-border hover:border-accent text-accent-2 rounded-control flex items-center gap-1.5 transition-colors"
             >
-              <span>{inviteCopied ? "✓ Link Copied" : "🔗 Invite"}</span>
+              {inviteCopied ? (
+                <IconCheck className="w-3.5 h-3.5" />
+              ) : (
+                <IconLink className="w-3.5 h-3.5" />
+              )}
+              <span className="hidden sm:inline">{inviteCopied ? "Copied" : "Invite"}</span>
             </button>
             <button
               type="button"
@@ -696,12 +851,13 @@ export function SpaceView({
                   : "bg-surface-2 hover:bg-surface border-border text-text hover:border-accent"
               }`}
             >
-              <span>{isFullscreen ? "✕" : "⛶"}</span>
-              <span className="hidden sm:inline">{isFullscreen ? "Exit Fullscreen" : "Fullscreen"}</span>
+              {isFullscreen ? (
+                <IconCompress className="w-3.5 h-3.5" />
+              ) : (
+                <IconExpand className="w-3.5 h-3.5" />
+              )}
+              <span className="hidden md:inline">{isFullscreen ? "Exit" : "Fullscreen"}</span>
             </button>
-            <span className="text-xs text-text-muted font-mono hidden sm:inline">
-              {remotePeers.length + 1} online
-            </span>
             <button
               type="button"
               onClick={() => setIsSidebarOpen((v) => !v)}
@@ -713,45 +869,15 @@ export function SpaceView({
                   : "bg-surface-2 hover:bg-surface border-border text-text hover:border-accent"
               }`}
             >
-              <span>{isSidebarOpen ? "Hide Panel" : "Sidebar"}</span>
+              <IconSidebarPanel className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">
+                {isSidebarOpen ? "Hide" : `${remotePeers.length + 1} Online`}
+              </span>
               {unreadChatCount > 0 && (
                 <span className="px-1.5 min-w-[1rem] h-4 rounded-full bg-accent text-bg text-[10px] font-bold flex items-center justify-center leading-none">
                   {unreadChatCount > 99 ? "99+" : unreadChatCount}
                 </span>
               )}
-            </button>
-          </div>
-        </div>
-
-        {/* Office Announcement & Quick Navigation Bar */}
-        <div className="bg-surface-2/90 border-b border-border px-4 py-1.5 flex items-center justify-between text-xs text-text-muted z-10 flex-shrink-0">
-          <div className="flex items-center gap-2 truncate">
-            <span className="text-accent font-semibold flex items-center gap-1 flex-shrink-0">
-              <span>📢</span> Daily Sync:
-            </span>
-            <span className="truncate text-text font-sans text-[11px] sm:text-xs">
-              Welcome to {spaceName}! Join the Glass Boardroom for team syncs or relax in the Lo-Fi Cafe Lounge.
-            </span>
-          </div>
-
-          <div className="flex items-center gap-1.5 flex-shrink-0">
-            <button
-              onClick={() => handleWarpToRoom(OFFICE_ZONES[2]!)}
-              className="px-2 py-0.5 rounded text-[10px] font-display font-semibold bg-surface border border-border text-accent hover:bg-surface-2"
-            >
-              🚪 Boardroom
-            </button>
-            <button
-              onClick={() => handleWarpToRoom(OFFICE_ZONES[3]!)}
-              className="px-2 py-0.5 rounded text-[10px] font-display font-semibold bg-surface border border-border text-[#B84DFF] hover:bg-surface-2"
-            >
-              📋 War Room
-            </button>
-            <button
-              onClick={() => handleWarpToRoom(OFFICE_ZONES[4]!)}
-              className="px-2 py-0.5 rounded text-[10px] font-display font-semibold bg-surface border border-border text-amber-400 hover:bg-surface-2"
-            >
-              ☕ Cafe
             </button>
           </div>
         </div>
@@ -764,6 +890,7 @@ export function SpaceView({
               localPeer={localPeer}
               remotePeers={remotePeers}
               speakingMap={speakingMap}
+              theme={OFFICE_THEMES[themeId]}
               onMove={handleMove}
               onInteract={handleInteract}
             />
@@ -777,6 +904,20 @@ export function SpaceView({
               onInteract={handleInteract}
             />
           )}
+
+          {/* Top-Left Live Interactive Office Minimap */}
+          <div className="absolute top-3 left-3 z-20">
+            <OfficeMinimap
+              map={map}
+              localPeer={localPeer}
+              remotePeers={remotePeers}
+              onWarpToRoom={handleWarpToRoom}
+              onWarpToCoords={handleWarpToCoords}
+            />
+          </div>
+
+          {/* Floating Overhead Avatar Reactions (0 React loop churn) */}
+          <PeerReactionsOverlay reactions={peerReactions} />
 
           {/* Desktop Floating Video Heads */}
           {videoLayout === "floating" && (
@@ -792,12 +933,12 @@ export function SpaceView({
           {/* Coffee Speed Boost Banner */}
           {coffeeBoostNotice && (
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 px-4 py-1.5 bg-amber-500/90 text-black font-display text-xs font-bold rounded-full shadow-arcade animate-bounce">
-              ⚡ ESPRESSO BOOST ACTIVATED! (+50% Move Speed)
+              ESPRESSO BOOST ACTIVATED (+50% Speed)
             </div>
           )}
 
           {/* Floating Controls Bar (Bottom Center) */}
-          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30">
+          <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 max-w-[96vw]">
             <SpaceControls
               isAudioMuted={!localPeer.media.audio}
               isVideoMuted={!localPeer.media.video}
@@ -807,6 +948,7 @@ export function SpaceView({
               isFullscreen={isFullscreen}
               videoLayout={videoLayout}
               viewMode={viewMode}
+              themeId={themeId}
               onToggleAudio={handleToggleAudio}
               onToggleVideo={handleToggleVideo}
               onToggleScreenShare={handleToggleScreenShare}
@@ -818,6 +960,8 @@ export function SpaceView({
               onToggleViewMode={() =>
                 setViewMode((m) => (m === "3d" ? "2d" : "3d"))
               }
+              onCycleTheme={handleCycleTheme}
+              onTriggerReaction={handleTriggerReaction}
               onOpenAvatarCustomizer={() => setAvatarModalOpen(true)}
               onOpenMeetingSchedule={() => setMeetingModalOpen(true)}
               onOpenPulse={() => setPulseModalOpen(true)}
@@ -949,42 +1093,58 @@ export function SpaceView({
         </div>
       </ArcadeDialog>
 
+      {/* Pre-Join Lobby & Camera Check Modal */}
+      <PreJoinLobbyModal
+        open={preJoinOpen}
+        spaceName={spaceName}
+        initialName={localPeer.name}
+        initialColor={localPeer.avatarColor}
+        initialStatus={localPeer.status}
+        isAudioEnabled={localPeer.media.audio}
+        isVideoEnabled={localPeer.media.video}
+        localStream={streamsMap["local"] ?? webrtcRef.current?.getLocalStream() ?? null}
+        onToggleAudio={handleToggleAudio}
+        onToggleVideo={handleToggleVideo}
+        onConfirm={(config) => {
+          handleSaveAvatarCustomization(config);
+          dismissLobby();
+        }}
+        onClose={dismissLobby}
+      />
+
       {/* Keyboard & Controls Help Modal */}
       <ArcadeDialog
         open={helpModalOpen}
         onClose={() => setHelpModalOpen(false)}
-        title="⌨️ Controls & Office Guide"
+        title="Controls & Office Guide"
         maxWidthClass="max-w-md"
       >
         <div className="space-y-3 text-xs text-text">
           <div className="p-2.5 bg-surface-2 rounded-control space-y-1">
-            <span className="font-display font-bold text-accent">3D & 2D Virtual Floor:</span>
+            <span className="font-display font-bold text-accent">3D &amp; 2D Virtual Floor:</span>
             <ul className="list-disc pl-4 space-y-0.5 text-text-muted">
-              <li>Toggle between <b className="text-text">🧊 3D WebGL</b> and <b className="text-text">🗺️ 2D Classic</b> views using the button in the bottom controls bar.</li>
               <li><b className="text-text">WASD / Arrow Keys</b>: Walk smoothly across all rooms.</li>
-              <li><b className="text-text">F</b> or the <b className="text-text">Fullscreen</b> button: Expand into immersive fullscreen mode (<b className="text-text">Esc</b> to exit).</li>
-              <li><b className="text-text">B</b>: Collapse or expand the People, Rooms &amp; Chat sidebar panel.</li>
-              <li><b className="text-text">Click / Tap Anywhere</b>: Raycasted BFS pathfinding navigates around desks and walls.</li>
+              <li><b className="text-text">Click Map or Floor</b>: Pathfind around desks or warp from the top-left minimap.</li>
+              <li><b className="text-text">Scroll Wheel</b> or top-right HUD: Zoom &amp; orbit the 3D camera.</li>
+              <li><b className="text-text">F</b>: Expand into Fullscreen Mode (<b className="text-text">Esc</b> to exit).</li>
+              <li><b className="text-text">B</b>: Collapse or expand the People, Rooms &amp; Chat panel.</li>
             </ul>
           </div>
 
           <div className="p-2.5 bg-surface-2 rounded-control space-y-1">
-            <span className="font-display font-bold text-accent">Proximity Audio & Video:</span>
+            <span className="font-display font-bold text-accent">Audio, Video &amp; Reactions:</span>
             <ul className="list-disc pl-4 space-y-0.5 text-text-muted">
-              <li>Walk near coworkers (&lt;4 tiles) to start video and hear spatial audio.</li>
-              <li>Enter the <b className="text-text">Glass Boardroom</b> or <b className="text-text">War Room</b> for soundproof meeting isolation.</li>
+              <li><b className="text-text">M</b> / <b className="text-text">V</b>: Toggle Microphone and Camera.</li>
+              <li><b className="text-text">1–5</b>: Pop quick overhead reactions (Wave, Agree, Coffee, Ship it, Idea).</li>
+              <li>Walk near coworkers (&lt;4 tiles) for proximity audio/video, or enter soundproof rooms.</li>
             </ul>
           </div>
 
           <div className="p-2.5 bg-surface-2 rounded-control space-y-1">
             <span className="font-display font-bold text-accent">Interactive Objects:</span>
             <ul className="list-disc pl-4 space-y-0.5 text-text-muted">
-              <li>Press <b className="text-text">E</b> at the Lo-Fi Radio to play ambient focus beats.</li>
-              <li>Press <b className="text-text">E</b> at an empty desk to claim your seat and set your status.</li>
-              <li>Press <b className="text-text">E</b> at the Whiteboard to sketch or take notes.</li>
-              <li>Press <b className="text-text">E</b> at the Espresso Bar for an espresso speed boost.</li>
-              <li>Click <b className="text-text">🎨</b> to customize your 3D avatar, suit color, and status.</li>
-              <li>Click <b className="text-text">📅</b> to view and schedule office meetings and agendas.</li>
+              <li>Press <b className="text-text">E</b> near desks, whiteboards, Lo-Fi Radio, or the Espresso Bar.</li>
+              <li>Switch office lighting themes (<b className="text-text">Midnight Studio</b>, <b className="text-text">Daylight Glass</b>, <b className="text-text">Warm Lounge</b>) from the dock.</li>
             </ul>
           </div>
         </div>
