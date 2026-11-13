@@ -18,7 +18,7 @@ import { WebRTCMeshManager } from "@/lib/space/webrtcMesh";
 import { SpaceCanvas } from "@/components/space/SpaceCanvas";
 import { Space3DCanvas } from "@/components/space/Space3DCanvas";
 import { SpaceControls } from "@/components/space/SpaceControls";
-import { SpaceSidebar } from "@/components/space/SpaceSidebar";
+import { SpaceSidebar, SidebarTab } from "@/components/space/SpaceSidebar";
 import { FloatingVideoBubbles } from "@/components/space/FloatingVideoBubbles";
 import { VideoDock } from "@/components/space/VideoDock";
 import { LoungeRadioModal } from "@/components/space/LoungeRadioModal";
@@ -95,7 +95,23 @@ export function SpaceView({
   // UI state
   const [videoLayout, setVideoLayout] = useState<"floating" | "docked">("floating");
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("people");
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [activeDesk, setActiveDesk] = useState<InteractiveObject | null>(null);
+
+  // Open sidebar by default on desktop viewports while staying collapsed on mobile
+  useEffect(() => {
+    if (typeof window !== "undefined" && window.innerWidth >= 768) {
+      setIsSidebarOpen(true);
+    }
+  }, []);
+
+  // Clear unread chat badge whenever the chat tab is actively visible
+  useEffect(() => {
+    if (isSidebarOpen && sidebarTab === "chat" && unreadChatCount > 0) {
+      setUnreadChatCount(0);
+    }
+  }, [isSidebarOpen, sidebarTab, unreadChatCount]);
 
   // Modals
   const [radioModalOpen, setRadioModalOpen] = useState(false);
@@ -201,6 +217,9 @@ export function SpaceView({
       if (e.code === "KeyF") {
         e.preventDefault();
         void handleToggleFullscreen();
+      } else if (e.code === "KeyB") {
+        e.preventDefault();
+        setIsSidebarOpen((v) => !v);
       } else if (e.code === "Escape" && isImmersiveFallback && !document.querySelector("dialog[open]")) {
         setIsImmersiveFallback(false);
       }
@@ -217,6 +236,10 @@ export function SpaceView({
   localPeerRef.current = localPeer;
   const remotePeersRef = useRef<PeerState[]>(remotePeers);
   remotePeersRef.current = remotePeers;
+  const isSidebarOpenRef = useRef(isSidebarOpen);
+  isSidebarOpenRef.current = isSidebarOpen;
+  const sidebarTabRef = useRef(sidebarTab);
+  sidebarTabRef.current = sidebarTab;
 
   // Handle Incoming Signaling Messages (stable callback)
   const handleSignalMessage = useCallback(
@@ -329,6 +352,12 @@ export function SpaceView({
               zoneId: msg.zoneId,
             },
           ]);
+          if (
+            msg.sender !== myPeer.name &&
+            (!isSidebarOpenRef.current || sidebarTabRef.current !== "chat")
+          ) {
+            setUnreadChatCount((c) => Math.min(999, c + 1));
+          }
           break;
 
         case "webrtc_signal":
@@ -674,10 +703,22 @@ export function SpaceView({
               {remotePeers.length + 1} online
             </span>
             <button
+              type="button"
               onClick={() => setIsSidebarOpen((v) => !v)}
-              className="md:hidden px-2.5 py-1 text-xs bg-surface-2 border border-border text-text rounded-control"
+              aria-pressed={isSidebarOpen}
+              title={isSidebarOpen ? "Collapse Sidebar (B)" : "Open Sidebar (B)"}
+              className={`relative px-2.5 py-1 text-xs border rounded-control flex items-center gap-1.5 transition-colors ${
+                isSidebarOpen
+                  ? "bg-accent/15 border-accent text-accent"
+                  : "bg-surface-2 hover:bg-surface border-border text-text hover:border-accent"
+              }`}
             >
-              Sidebar
+              <span>{isSidebarOpen ? "Hide Panel" : "Sidebar"}</span>
+              {unreadChatCount > 0 && (
+                <span className="px-1.5 min-w-[1rem] h-4 rounded-full bg-accent text-bg text-[10px] font-bold flex items-center justify-center leading-none">
+                  {unreadChatCount > 99 ? "99+" : unreadChatCount}
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -762,6 +803,7 @@ export function SpaceView({
               isVideoMuted={!localPeer.media.video}
               isScreenSharing={localPeer.media.screen}
               isSidebarOpen={isSidebarOpen}
+              unreadChatCount={unreadChatCount}
               isFullscreen={isFullscreen}
               videoLayout={videoLayout}
               viewMode={viewMode}
@@ -807,6 +849,9 @@ export function SpaceView({
         onWarpToPeer={handleWarpToPeer}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
+        activeTab={sidebarTab}
+        onTabChange={setSidebarTab}
+        unreadChatCount={unreadChatCount}
       />
 
       {/* Interactive Modals */}
@@ -918,6 +963,7 @@ export function SpaceView({
               <li>Toggle between <b className="text-text">🧊 3D WebGL</b> and <b className="text-text">🗺️ 2D Classic</b> views using the button in the bottom controls bar.</li>
               <li><b className="text-text">WASD / Arrow Keys</b>: Walk smoothly across all rooms.</li>
               <li><b className="text-text">F</b> or the <b className="text-text">Fullscreen</b> button: Expand into immersive fullscreen mode (<b className="text-text">Esc</b> to exit).</li>
+              <li><b className="text-text">B</b>: Collapse or expand the People, Rooms &amp; Chat sidebar panel.</li>
               <li><b className="text-text">Click / Tap Anywhere</b>: Raycasted BFS pathfinding navigates around desks and walls.</li>
             </ul>
           </div>
