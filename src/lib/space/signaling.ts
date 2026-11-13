@@ -177,6 +177,15 @@ export class SpaceSignaling {
     this.broadcast(msg);
   }
 
+  public sendSignal(to: string, payload: any): void {
+    this.broadcast({
+      type: "webrtc_signal",
+      from: this.localPeer.id,
+      to,
+      payload,
+    });
+  }
+
   public destroy(): void {
     if (this.pollInterval) clearInterval(this.pollInterval);
     this.broadcast({ type: "peer_leave", id: this.localPeer.id });
