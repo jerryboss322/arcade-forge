@@ -35,6 +35,8 @@ export function DeskModal({
   onUpdateStatus,
 }: DeskModalProps) {
   const [customStatus, setCustomStatus] = useState(currentStatus || "");
+  const [roleTitle, setRoleTitle] = useState("Software Engineer");
+  const [timezone, setTimezone] = useState("UTC (GMT)");
 
   if (!desk) return null;
 
@@ -59,12 +61,19 @@ export function DeskModal({
       maxWidthClass="max-w-md"
     >
       <div className="space-y-4">
+        {/* Desk Assignment Card */}
         <div className="p-3 bg-surface-2 rounded-control border border-border">
           <p className="text-xs text-text-muted mb-1">Workstation Assignment:</p>
           <div className="flex items-center justify-between">
-            <span className="font-display text-sm font-semibold text-text">
-              {isClaimedByMe ? "Claimed by You" : "Available Desk"}
-            </span>
+            <div>
+              <span className="font-display text-sm font-semibold text-text block">
+                {isClaimedByMe ? "Claimed by You" : "Available Desk"}
+              </span>
+              <span className="text-[11px] text-text-muted font-mono">
+                Dual 4K Monitors • Ergonomic Chair • Desk Lamp
+              </span>
+            </div>
+
             {isClaimedByMe ? (
               <button
                 onClick={() => {
@@ -78,20 +87,21 @@ export function DeskModal({
             ) : (
               <button
                 onClick={() => {
-                  onClaim(desk.id, customStatus || "Focusing");
+                  onClaim(desk.id, customStatus || "Deep Focus");
                   onClose();
                 }}
-                className="px-3 py-1 text-xs bg-accent text-bg font-display font-bold rounded-control hover:brightness-110"
+                className="px-3 py-1.5 text-xs bg-accent text-bg font-display font-bold rounded-control hover:brightness-110 shadow-sm"
               >
-                Claim This Desk
+                Claim Desk
               </button>
             )}
           </div>
         </div>
 
+        {/* Quick Status Presets */}
         <div>
           <label className="block text-xs font-display text-text mb-2">
-            Quick Status Presets:
+            Status Preset:
           </label>
           <div className="grid grid-cols-2 gap-2">
             {STATUS_PRESETS.map((p) => (
@@ -112,25 +122,60 @@ export function DeskModal({
           </div>
         </div>
 
-        <form onSubmit={handleSaveCustom} className="space-y-2 pt-2 border-t border-border">
-          <label className="block text-xs font-display text-text">
-            Custom Status Message:
-          </label>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={customStatus}
-              onChange={(e) => setCustomStatus(e.target.value)}
-              placeholder="e.g. Shipping the v2 release..."
-              maxLength={40}
-              className="flex-1 px-3 py-1.5 text-xs bg-bg border border-border rounded-control text-text focus:outline-none focus:border-accent"
-            />
-            <button
-              type="submit"
-              className="px-3 py-1.5 text-xs bg-accent text-bg font-display font-bold rounded-control hover:brightness-110"
-            >
-              Set
-            </button>
+        {/* Custom Status Input */}
+        <form onSubmit={handleSaveCustom} className="space-y-3 pt-2 border-t border-border">
+          <div>
+            <label className="block text-xs font-display text-text mb-1">
+              Custom Status Message:
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={customStatus}
+                onChange={(e) => setCustomStatus(e.target.value)}
+                placeholder="e.g. Shipping the quarterly release..."
+                maxLength={40}
+                className="flex-1 px-3 py-1.5 text-xs bg-bg border border-border rounded-control text-text focus:outline-none focus:border-accent"
+              />
+              <button
+                type="submit"
+                className="px-3 py-1.5 text-xs bg-accent text-bg font-display font-bold rounded-control hover:brightness-110"
+              >
+                Set Status
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2 pt-1">
+            <div>
+              <label className="block text-[11px] font-display text-text-muted mb-1">
+                Role / Title:
+              </label>
+              <input
+                type="text"
+                value={roleTitle}
+                onChange={(e) => setRoleTitle(e.target.value)}
+                placeholder="e.g. Lead Designer"
+                className="w-full px-2.5 py-1.5 text-xs bg-bg border border-border rounded-control text-text focus:outline-none focus:border-accent"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-display text-text-muted mb-1">
+                Timezone:
+              </label>
+              <select
+                value={timezone}
+                onChange={(e) => setTimezone(e.target.value)}
+                className="w-full px-2 py-1.5 text-xs bg-bg border border-border rounded-control text-text focus:outline-none focus:border-accent"
+              >
+                <option value="UTC-8 (PST)">UTC-8 (PST)</option>
+                <option value="UTC-5 (EST)">UTC-5 (EST)</option>
+                <option value="UTC (GMT)">UTC (GMT)</option>
+                <option value="UTC+1 (CET)">UTC+1 (CET)</option>
+                <option value="UTC+8 (SGT)">UTC+8 (SGT)</option>
+                <option value="UTC+9 (JST)">UTC+9 (JST)</option>
+              </select>
+            </div>
           </div>
         </form>
       </div>

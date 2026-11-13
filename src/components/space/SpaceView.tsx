@@ -23,6 +23,7 @@ import { VideoDock } from "@/components/space/VideoDock";
 import { LoungeRadioModal } from "@/components/space/LoungeRadioModal";
 import { DeskModal } from "@/components/space/DeskModal";
 import { WhiteboardModal } from "@/components/space/WhiteboardModal";
+import { TheaterModal } from "@/components/space/TheaterModal";
 import { ArcadeDialog } from "@/components/ui/ArcadeDialog";
 
 interface SpaceViewProps {
@@ -90,10 +91,12 @@ export function SpaceView({
   const [radioModalOpen, setRadioModalOpen] = useState(false);
   const [deskModalOpen, setDeskModalOpen] = useState(false);
   const [whiteboardModalOpen, setWhiteboardModalOpen] = useState(false);
+  const [theaterModalOpen, setTheaterModalOpen] = useState(false);
   const [watercoolerModalOpen, setWatercoolerModalOpen] = useState(false);
   const [watercoolerQuote, setWatercoolerQuote] = useState("");
   const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [coffeeBoostNotice, setCoffeeBoostNotice] = useState(false);
+  const [inviteCopied, setInviteCopied] = useState(false);
 
   // References
   const signalingRef = useRef<SpaceSignaling | null>(null);
@@ -285,7 +288,7 @@ export function SpaceView({
           setWatercoolerModalOpen(true);
           break;
         case "screen":
-          setWhiteboardModalOpen(true);
+          setTheaterModalOpen(true);
           break;
       }
     },
@@ -363,6 +366,17 @@ export function SpaceView({
     return dist <= 8 || p.zoneId === localPeer.zoneId;
   });
 
+  const handleCopyInvite = () => {
+    if (typeof window !== "undefined") {
+      navigator.clipboard?.writeText(window.location.href);
+      setInviteCopied(true);
+      setTimeout(() => setInviteCopied(false), 2500);
+    }
+  };
+
+  const activePresenter = remotePeers.find((p) => p.media.screen) || (localPeer.media.screen ? localPeer : null);
+  const activePresenterStream = activePresenter ? streamsMap[activePresenter.id] || webrtcRef.current?.getLocalStream() || null : null;
+
   return (
     <div className="relative w-full h-[calc(100vh-3.5rem)] md:h-[calc(100vh-4rem)] flex overflow-hidden bg-bg">
       {/* Center 2D Floor Area */}
@@ -380,6 +394,20 @@ export function SpaceView({
           </div>
 
           <div className="flex items-center gap-2">
+            {activePresenter && (
+              <button
+                onClick={() => setTheaterModalOpen(true)}
+                className="px-2.5 py-1 text-xs font-display font-semibold bg-accent text-bg rounded-control hover:brightness-110 flex items-center gap-1 shadow-sm animate-pulse"
+              >
+                <span>🖥️ Watch Screen</span>
+              </button>
+            )}
+            <button
+              onClick={handleCopyInvite}
+              className="px-2.5 py-1 text-xs bg-surface-2 hover:bg-surface border border-border text-accent rounded-control flex items-center gap-1"
+            >
+              <span>{inviteCopied ? "✓ Link Copied" : "🔗 Invite"}</span>
+            </button>
             <span className="text-xs text-text-muted font-mono hidden sm:inline">
               {remotePeers.length + 1} online
             </span>
@@ -388,6 +416,39 @@ export function SpaceView({
               className="md:hidden px-2.5 py-1 text-xs bg-surface-2 border border-border text-text rounded-control"
             >
               Sidebar
+            </button>
+          </div>
+        </div>
+
+        {/* Office Announcement & Quick Navigation Bar */}
+        <div className="bg-surface-2/90 border-b border-border px-4 py-1.5 flex items-center justify-between text-xs text-text-muted z-10 flex-shrink-0">
+          <div className="flex items-center gap-2 truncate">
+            <span className="text-accent font-semibold flex items-center gap-1 flex-shrink-0">
+              <span>📢</span> Daily Sync:
+            </span>
+            <span className="truncate text-text font-sans text-[11px] sm:text-xs">
+              Welcome to {spaceName}! Join the Glass Boardroom for team syncs or relax in the Lo-Fi Cafe Lounge.
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1.5 flex-shrink-0">
+            <button
+              onClick={() => handleWarpToRoom(OFFICE_ZONES[2]!)}
+              className="px-2 py-0.5 rounded text-[10px] font-display font-semibold bg-surface border border-border text-accent hover:bg-surface-2"
+            >
+              🚪 Boardroom
+            </button>
+            <button
+              onClick={() => handleWarpToRoom(OFFICE_ZONES[3]!)}
+              className="px-2 py-0.5 rounded text-[10px] font-display font-semibold bg-surface border border-border text-[#B84DFF] hover:bg-surface-2"
+            >
+              📋 War Room
+            </button>
+            <button
+              onClick={() => handleWarpToRoom(OFFICE_ZONES[4]!)}
+              className="px-2 py-0.5 rounded text-[10px] font-display font-semibold bg-surface border border-border text-amber-400 hover:bg-surface-2"
+            >
+              ☕ Cafe
             </button>
           </div>
         </div>
@@ -488,6 +549,13 @@ export function SpaceView({
       <WhiteboardModal
         open={whiteboardModalOpen}
         onClose={() => setWhiteboardModalOpen(false)}
+      />
+
+      <TheaterModal
+        open={theaterModalOpen}
+        onClose={() => setTheaterModalOpen(false)}
+        presenterName={activePresenter?.name || "Main Boardroom Screen"}
+        stream={activePresenterStream}
       />
 
       {/* Watercooler Icebreaker Modal */}
