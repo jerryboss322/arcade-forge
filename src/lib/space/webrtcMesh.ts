@@ -1,8 +1,44 @@
-// WebRTC P2P Proximity Mesh with Spatial Audio and Soundproof Meeting Rooms
-// $0 Infrastructure Overhead: Direct peer-to-peer media over free Google STUN.
-// Spatial audio with Web Audio API GainNode and StereoPannerNode.
+// WebRTC P2P Office Mesh with Office-Wide & Spatial Proximity Audio + Soundproof Meeting Rooms
+// Direct peer-to-peer media over STUN with ICE candidate buffering, late track attachment,
+// Chromium RTP audio sink unlock, and Web Audio stereo spatial attenuation.
 
 import { SpaceZone } from "./officeMap";
+
+export type AudioScope = "office" | "proximity";
+
+export interface SpatialGainInput {
+  dist: number;
+  isLocalPrivate: boolean;
+  isPeerPrivate: boolean;
+  sameZone: boolean;
+  scope: AudioScope;
+}
+
+/**
+ * Computes gain [0..1] for remote peer audio honoring soundproof rooms and open-office scope.
+ */
+export function computeSpatialGain({
+  dist,
+  isLocalPrivate,
+  isPeerPrivate,
+  sameZone,
+  scope,
+}: SpatialGainInput): number {
+  if (isLocalPrivate || isPeerPrivate) {
+    return sameZone && isLocalPrivate ? 1.0 : 0.0;
+  }
+
+  if (scope === "office") {
+    // Everyone on the open office floor can clearly hear each other with gentle depth fade
+    if (dist <= 8) return 1.0;
+    return Math.max(0.45, Number((1.0 - (dist - 8) / 22).toFixed(3)));
+  }
+
+  // Strict proximity whisper mode
+  if (dist <= 4) return 1.0;
+  if (dist <= 8) return Math.max(0, 1.0 - (dist - 4) / 4);
+  return 0.0;
+}
 
 export interface RemotePeerMedia {
   peerId: string;
@@ -10,9 +46,20 @@ export interface RemotePeerMedia {
   audioGain: GainNode | null;
   panner: StereoPannerNode | null;
   analyser: AnalyserNode | null;
+  sourceNode: MediaStreamAudioSourceNode | null;
+  sinkAudio: HTMLAudioElement | null;
+  targetGain: number;
   isSpeaking: boolean;
   distance: number;
   inSameZone: boolean;
+}
+
+interface PeerConnectionEntry {
+  pc: RTCPeerConnection;
+  pendingCandidates: RTCIceCandidateInit[];
+  remoteStream: MediaStream | null;
+  remoteMedia?: RemotePeerMedia;
+  restartedIce?: boolean;
 }
 
 export class WebRTCMeshManager {
@@ -20,16 +67,17 @@ export class WebRTCMeshManager {
   private screenStream: MediaStream | null = null;
   private audioCtx: AudioContext | null = null;
   private localAnalyser: AnalyserNode | null = null;
-  private peers: Map<string, { pc: RTCPeerConnection; remoteMedia?: RemotePeerMedia }> = new Map();
+  private peers: Map<string, PeerConnectionEntry> = new Map();
   private sendSignalCb: (to: string, payload: any) => void;
   private onRemoteStreamCb: (peerId: string, stream: MediaStream, isSpeaking: boolean) => void;
   private onSpeakingChangeCb: (peerId: string, speaking: boolean) => void;
   private localPeerId: string;
-  private vadInterval: any = null;
+  private vadInterval: ReturnType<typeof setInterval> | null = null;
+  private audioScope: AudioScope = "office";
 
-  public isAudioMuted: boolean = false;
-  public isVideoMuted: boolean = false;
-  public isScreenSharing: boolean = false;
+  public isAudioMuted = false;
+  public isVideoMuted = false;
+  public isScreenSharing = false;
 
   constructor(
     sendSignal: (to: string, payload: any) => void,
@@ -43,11 +91,46 @@ export class WebRTCMeshManager {
     this.localPeerId = localPeerId;
 
     if (typeof window !== "undefined") {
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const AudioContextClass =
+        window.AudioContext ||
+        (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
       if (AudioContextClass) {
         this.audioCtx = new AudioContextClass();
       }
     }
+  }
+
+  public setAudioScope(scope: AudioScope): void {
+    this.audioScope = scope;
+  }
+
+  public getAudioScope(): AudioScope {
+    return this.audioScope;
+  }
+
+  /**
+   * Unlocks browser AudioContext on user interaction and switches active sinks cleanly.
+   */
+  public async resumeAudio(): Promise<boolean> {
+    if (!this.audioCtx) return false;
+    if (this.audioCtx.state === "suspended") {
+      try {
+        await this.audioCtx.resume();
+      } catch {
+        return false;
+      }
+    }
+
+    const ctxRunning = this.audioCtx.state === "running";
+    for (const entry of this.peers.values()) {
+      const media = entry.remoteMedia;
+      if (!media?.sinkAudio) continue;
+      // Keep muted sink element playing so Chromium continues decoding WebRTC RTP audio
+      media.sinkAudio.muted = ctxRunning;
+      media.sinkAudio.volume = ctxRunning ? 0 : media.targetGain;
+      media.sinkAudio.play().catch(() => {});
+    }
+    return ctxRunning;
   }
 
   /**
@@ -66,7 +149,7 @@ export class WebRTCMeshManager {
 
       if (this.audioCtx && this.localStream.getAudioTracks().length > 0) {
         if (this.audioCtx.state === "suspended") {
-          await this.audioCtx.resume();
+          this.audioCtx.resume().catch(() => {});
         }
         const source = this.audioCtx.createMediaStreamSource(this.localStream);
         this.localAnalyser = this.audioCtx.createAnalyser();
@@ -79,7 +162,6 @@ export class WebRTCMeshManager {
       return this.localStream;
     } catch (err) {
       console.warn("Could not capture webcam/microphone:", err);
-      // Create silent / blank dummy stream fallback so P2P mesh still functions
       const fallback = this.createDummyStream();
       await this.attachLocalStreamToPeers();
       return fallback;
@@ -132,6 +214,7 @@ export class WebRTCMeshManager {
   }
 
   public toggleAudio(): boolean {
+    void this.resumeAudio();
     if (!this.localStream) return false;
     const track = this.localStream.getAudioTracks()[0];
     if (track) {
@@ -144,6 +227,7 @@ export class WebRTCMeshManager {
   }
 
   public toggleVideo(): boolean {
+    void this.resumeAudio();
     if (!this.localStream) return false;
     const track = this.localStream.getVideoTracks()[0];
     if (track) {
@@ -156,6 +240,7 @@ export class WebRTCMeshManager {
   }
 
   public async toggleScreenShare(): Promise<boolean> {
+    void this.resumeAudio();
     if (this.isScreenSharing) {
       if (this.screenStream) {
         this.screenStream.getTracks().forEach((t) => t.stop());
@@ -205,7 +290,7 @@ export class WebRTCMeshManager {
   }
 
   /**
-   * Connect to a newly detected peer in proximity.
+   * Connect to a coworker in the same office.
    */
   public async connectToPeer(peerId: string, initiator: boolean): Promise<void> {
     if (this.peers.has(peerId)) return;
@@ -214,8 +299,16 @@ export class WebRTCMeshManager {
       iceServers: [
         { urls: "stun:stun.l.google.com:19302" },
         { urls: "stun:stun1.l.google.com:19302" },
+        { urls: "stun:stun2.l.google.com:19302" },
       ],
     });
+
+    const entry: PeerConnectionEntry = {
+      pc,
+      pendingCandidates: [],
+      remoteStream: null,
+    };
+    this.peers.set(peerId, entry);
 
     const activeStream = this.screenStream || this.localStream;
     if (activeStream) {
@@ -226,17 +319,34 @@ export class WebRTCMeshManager {
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        this.sendSignalCb(peerId, { candidate: event.candidate });
+        this.sendSignalCb(peerId, { candidate: event.candidate.toJSON() });
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === "failed" && !entry.restartedIce) {
+        entry.restartedIce = true;
+        pc.restartIce?.();
       }
     };
 
     pc.ontrack = (event) => {
-      const remoteStream = event.streams[0] || new MediaStream([event.track]);
-      this.setupSpatialAudio(peerId, remoteStream);
-      this.onRemoteStreamCb(peerId, remoteStream, false);
-    };
+      let combinedStream = entry.remoteStream;
+      if (!combinedStream) {
+        combinedStream = event.streams[0] || new MediaStream();
+        entry.remoteStream = combinedStream;
+      }
+      if (!combinedStream.getTracks().some((t) => t.id === event.track.id)) {
+        combinedStream.addTrack(event.track);
+      }
 
-    this.peers.set(peerId, { pc });
+      if (event.track.kind === "audio" && !entry.remoteMedia) {
+        this.setupSpatialAudio(peerId, combinedStream);
+      }
+
+      // Emit a fresh MediaStream clone reference so React video elements always bind new tracks
+      this.onRemoteStreamCb(peerId, new MediaStream(combinedStream.getTracks()), false);
+    };
 
     if (initiator) {
       try {
@@ -270,13 +380,26 @@ export class WebRTCMeshManager {
         }
 
         await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
+
+        // Flush any ICE candidates that arrived before remote description was set
+        if (peerObj.pendingCandidates.length > 0) {
+          const buffered = peerObj.pendingCandidates.splice(0);
+          for (const candidateInit of buffered) {
+            await pc.addIceCandidate(new RTCIceCandidate(candidateInit)).catch(() => {});
+          }
+        }
+
         if (signal.sdp.type === "offer") {
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           this.sendSignalCb(fromPeerId, { sdp: pc.localDescription });
         }
       } else if (signal.candidate) {
-        await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        if (!pc.remoteDescription) {
+          peerObj.pendingCandidates.push(signal.candidate);
+        } else {
+          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate));
+        }
       }
     } catch (err) {
       console.warn("Signal error:", err);
@@ -284,56 +407,76 @@ export class WebRTCMeshManager {
   }
 
   /**
-   * Builds Web Audio routing for spatial attenuation and stereo panning.
+   * Builds Web Audio routing plus a hidden audio element so Chrome/Safari always play RTP audio.
    */
   private setupSpatialAudio(peerId: string, remoteStream: MediaStream): void {
-    if (!this.audioCtx || remoteStream.getAudioTracks().length === 0) return;
+    if (remoteStream.getAudioTracks().length === 0) return;
+    const peerObj = this.peers.get(peerId);
+    if (!peerObj) return;
 
-    try {
-      const source = this.audioCtx.createMediaStreamSource(remoteStream);
-      const gainNode = this.audioCtx.createGain();
-      gainNode.gain.value = 1.0;
+    const ctxRunning = this.audioCtx?.state === "running";
+    let sinkAudio: HTMLAudioElement | null = null;
 
-      let panner: StereoPannerNode | null = null;
-      if (this.audioCtx.createStereoPanner) {
-        panner = this.audioCtx.createStereoPanner();
-        panner.pan.value = 0;
-      }
-
-      const analyser = this.audioCtx.createAnalyser();
-      analyser.fftSize = 256;
-
-      // Audio route: Source -> Analyser -> Gain -> Panner -> Destination
-      source.connect(analyser);
-      analyser.connect(gainNode);
-
-      if (panner) {
-        gainNode.connect(panner);
-        panner.connect(this.audioCtx.destination);
-      } else {
-        gainNode.connect(this.audioCtx.destination);
-      }
-
-      const peerObj = this.peers.get(peerId);
-      if (peerObj) {
-        peerObj.remoteMedia = {
-          peerId,
-          stream: remoteStream,
-          audioGain: gainNode,
-          panner,
-          analyser,
-          isSpeaking: false,
-          distance: 0,
-          inSameZone: false,
-        };
-      }
-    } catch (err) {
-      console.warn("Spatial audio setup failed:", err);
+    if (typeof Audio !== "undefined") {
+      sinkAudio = new Audio();
+      sinkAudio.srcObject = remoteStream;
+      sinkAudio.autoplay = true;
+      sinkAudio.muted = ctxRunning;
+      sinkAudio.volume = ctxRunning ? 0 : 1.0;
+      sinkAudio.play().catch(() => {});
     }
+
+    let sourceNode: MediaStreamAudioSourceNode | null = null;
+    let analyser: AnalyserNode | null = null;
+    let gainNode: GainNode | null = null;
+    let panner: StereoPannerNode | null = null;
+
+    if (this.audioCtx) {
+      try {
+        sourceNode = this.audioCtx.createMediaStreamSource(remoteStream);
+        gainNode = this.audioCtx.createGain();
+        gainNode.gain.value = 1.0;
+
+        if (this.audioCtx.createStereoPanner) {
+          panner = this.audioCtx.createStereoPanner();
+          panner.pan.value = 0;
+        }
+
+        analyser = this.audioCtx.createAnalyser();
+        analyser.fftSize = 256;
+
+        // Audio route: Source -> Analyser -> Gain -> Panner -> Destination
+        sourceNode.connect(analyser);
+        analyser.connect(gainNode);
+
+        if (panner) {
+          gainNode.connect(panner);
+          panner.connect(this.audioCtx.destination);
+        } else {
+          gainNode.connect(this.audioCtx.destination);
+        }
+      } catch (err) {
+        console.warn("Spatial audio setup warning:", err);
+      }
+    }
+
+    peerObj.remoteMedia = {
+      peerId,
+      stream: remoteStream,
+      audioGain: gainNode,
+      panner,
+      analyser,
+      sourceNode,
+      sinkAudio,
+      targetGain: 1.0,
+      isSpeaking: false,
+      distance: 0,
+      inSameZone: false,
+    };
   }
 
   /**
-   * Recalculates audio attenuation and stereo panning based on avatar distance.
+   * Recalculates audio attenuation and stereo panning based on avatar distance & soundproof rooms.
    */
   public updateSpatialDistance(
     peerId: string,
@@ -353,40 +496,33 @@ export class WebRTCMeshManager {
     const dist = Math.sqrt(dx * dx + dy * dy);
     media.distance = dist;
 
-    // Check private zone audio isolation
     const isLocalPrivate = localZone?.isPrivate ?? false;
     const isPeerPrivate = peerZone?.isPrivate ?? false;
     const sameZone = localZone?.id === peerZone?.id;
     media.inSameZone = sameZone;
 
-    if (media.audioGain) {
-      if (isLocalPrivate || isPeerPrivate) {
-        // Soundproof meeting room: Only hear if in the exact same room
-        if (sameZone && isLocalPrivate) {
-          media.audioGain.gain.setTargetAtTime(1.0, this.audioCtx?.currentTime || 0, 0.05);
-        } else {
-          // Soundproof wall: completely muted
-          media.audioGain.gain.setTargetAtTime(0.0, this.audioCtx?.currentTime || 0, 0.05);
-        }
-      } else {
-        // Open floor spatial attenuation:
-        // <= 4 tiles: 100% volume
-        // 4..8 tiles: linear fade to 0%
-        // > 8 tiles: 0% volume
-        if (dist <= 4) {
-          media.audioGain.gain.setTargetAtTime(1.0, this.audioCtx?.currentTime || 0, 0.05);
-        } else if (dist <= 8) {
-          const vol = Math.max(0, 1.0 - (dist - 4) / 4);
-          media.audioGain.gain.setTargetAtTime(vol, this.audioCtx?.currentTime || 0, 0.05);
-        } else {
-          media.audioGain.gain.setTargetAtTime(0.0, this.audioCtx?.currentTime || 0, 0.05);
-        }
-      }
+    const targetGain = computeSpatialGain({
+      dist,
+      isLocalPrivate,
+      isPeerPrivate,
+      sameZone,
+      scope: this.audioScope,
+    });
+    media.targetGain = targetGain;
+
+    if (media.audioGain && this.audioCtx) {
+      media.audioGain.gain.setTargetAtTime(targetGain, this.audioCtx.currentTime, 0.05);
+    }
+
+    if (media.sinkAudio) {
+      const ctxRunning = this.audioCtx?.state === "running";
+      media.sinkAudio.muted = ctxRunning;
+      media.sinkAudio.volume = ctxRunning ? 0 : targetGain;
     }
 
     // Stereo Panning
     if (media.panner && this.audioCtx) {
-      const pan = Math.max(-1, Math.min(1, dx / 6));
+      const pan = Math.max(-1, Math.min(1, dx / 8));
       media.panner.pan.setTargetAtTime(pan, this.audioCtx.currentTime, 0.05);
     }
   }
@@ -395,6 +531,7 @@ export class WebRTCMeshManager {
    * Voice Activity Detection (VAD) loop.
    */
   private startVoiceActivityDetection(): void {
+    if (this.vadInterval) clearInterval(this.vadInterval);
     const dataArray = new Uint8Array(128);
 
     this.vadInterval = setInterval(() => {
@@ -406,6 +543,8 @@ export class WebRTCMeshManager {
         const avg = sum / dataArray.length;
         const speaking = avg > 18;
         this.onSpeakingChangeCb("local", speaking);
+      } else {
+        this.onSpeakingChangeCb("local", false);
       }
 
       // 2. Check remote peers
@@ -415,7 +554,8 @@ export class WebRTCMeshManager {
           let sum = 0;
           for (let i = 0; i < dataArray.length; i++) sum += dataArray[i] ?? 0;
           const avg = sum / dataArray.length;
-          const speaking = avg > 18 && (peerObj.remoteMedia.audioGain?.gain.value || 0) > 0.05;
+          const audible = (peerObj.remoteMedia.targetGain || 0) > 0.05;
+          const speaking = avg > 18 && audible;
 
           if (peerObj.remoteMedia.isSpeaking !== speaking) {
             peerObj.remoteMedia.isSpeaking = speaking;
@@ -426,9 +566,26 @@ export class WebRTCMeshManager {
     }, 120);
   }
 
+  private teardownPeerMedia(media?: RemotePeerMedia): void {
+    if (!media) return;
+    if (media.sinkAudio) {
+      media.sinkAudio.pause();
+      media.sinkAudio.srcObject = null;
+    }
+    try {
+      media.sourceNode?.disconnect();
+      media.analyser?.disconnect();
+      media.audioGain?.disconnect();
+      media.panner?.disconnect();
+    } catch {
+      // Safe disconnect
+    }
+  }
+
   public disconnectPeer(peerId: string): void {
     const peerObj = this.peers.get(peerId);
     if (peerObj) {
+      this.teardownPeerMedia(peerObj.remoteMedia);
       peerObj.pc.close();
       this.peers.delete(peerId);
     }
@@ -436,8 +593,9 @@ export class WebRTCMeshManager {
 
   public destroy(): void {
     if (this.vadInterval) clearInterval(this.vadInterval);
-    for (const [, { pc }] of this.peers) {
-      pc.close();
+    for (const [, peerObj] of this.peers) {
+      this.teardownPeerMedia(peerObj.remoteMedia);
+      peerObj.pc.close();
     }
     this.peers.clear();
 
