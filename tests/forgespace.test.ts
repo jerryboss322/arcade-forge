@@ -15,6 +15,7 @@ import {
   getThemeCssVars,
 } from "../src/lib/space/officeThemes";
 import { ScreenPositionsStore } from "../src/lib/space/screenPositionsStore";
+import { computeSpatialGain } from "../src/lib/space/webrtcMesh";
 
 describe("ForgeSpace Virtual Office", () => {
   it("generates 40x26 office tilemap with zones and collision boundaries", () => {
@@ -233,5 +234,81 @@ describe("ForgeSpace Virtual Office", () => {
     unsubscribe();
     store.update({});
     expect(updates).toEqual([1]);
+  });
+
+  it("computes spatial audio gain for office-wide, proximity, and private soundproof zones", () => {
+    // Office mode keeps everyone on the open floor clearly audible (>= 0.45) even across the map
+    expect(
+      computeSpatialGain({
+        dist: 2,
+        isLocalPrivate: false,
+        isPeerPrivate: false,
+        sameZone: false,
+        scope: "office",
+      })
+    ).toBe(1);
+
+    const farOfficeGain = computeSpatialGain({
+      dist: 25,
+      isLocalPrivate: false,
+      isPeerPrivate: false,
+      sameZone: false,
+      scope: "office",
+    });
+    expect(farOfficeGain).toBeGreaterThanOrEqual(0.45);
+    expect(farOfficeGain).toBeLessThanOrEqual(1);
+
+    // Proximity mode attenuates after 4 tiles and cuts off beyond 8 tiles when not in the same zone
+    expect(
+      computeSpatialGain({
+        dist: 3,
+        isLocalPrivate: false,
+        isPeerPrivate: false,
+        sameZone: false,
+        scope: "proximity",
+      })
+    ).toBe(1);
+
+    const midProxGain = computeSpatialGain({
+      dist: 6,
+      isLocalPrivate: false,
+      isPeerPrivate: false,
+      sameZone: false,
+      scope: "proximity",
+    });
+    expect(midProxGain).toBeGreaterThan(0);
+    expect(midProxGain).toBeLessThan(1);
+
+    expect(
+      computeSpatialGain({
+        dist: 12,
+        isLocalPrivate: false,
+        isPeerPrivate: false,
+        sameZone: false,
+        scope: "proximity",
+      })
+    ).toBe(0);
+
+    // Soundproof private rooms isolate outsiders in both office and proximity modes
+    for (const scope of ["office", "proximity"] as const) {
+      expect(
+        computeSpatialGain({
+          dist: 1,
+          isLocalPrivate: true,
+          isPeerPrivate: false,
+          sameZone: false,
+          scope,
+        })
+      ).toBe(0);
+      expect(
+        computeSpatialGain({
+          dist: 10,
+          isLocalPrivate: true,
+          isPeerPrivate: true,
+          sameZone: true,
+          scope,
+        })
+      ).toBe(1);
+    }
   });
 });
