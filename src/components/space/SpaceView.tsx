@@ -508,13 +508,26 @@ export function SpaceView({
             };
           });
         }
-      }
+      },
+      localPeerRef.current.id
     );
 
+    let cancelled = false;
     webrtcRef.current = webrtc;
-    webrtc.initLocalMedia(true, true).catch(() => {
-      // Browser camera/mic permissions denied or unavailable: graceful fallback
-    });
+    webrtc
+      .initLocalMedia(true, true)
+      .then((stream) => {
+        if (!cancelled && stream) {
+          setStreamsMap((prev) => ({
+            ...prev,
+            local: stream,
+            [localPeerRef.current.id]: stream,
+          }));
+        }
+      })
+      .catch(() => {
+        // Browser camera/mic permissions denied or unavailable: graceful fallback
+      });
 
     // 2. Initialize Signaling Channel
     const signaling = new SpaceSignaling(spaceSlug, localPeerRef.current, handleSignalMessage);
@@ -536,6 +549,7 @@ export function SpaceView({
     }, 10_000);
 
     return () => {
+      cancelled = true;
       clearInterval(pruneTimer);
       signaling.destroy();
       webrtc.destroy();
@@ -924,6 +938,7 @@ export function SpaceView({
             <div className="hidden md:block">
               <FloatingVideoBubbles
                 peers={[localPeer, ...remotePeers]}
+                localPeerId={localPeer.id}
                 speakingMap={speakingMap}
                 streamsMap={streamsMap}
               />
