@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, memo } from "react";
+import React, { useEffect, useLayoutEffect, useRef, memo } from "react";
 import { ActivePeerReaction } from "@/lib/space/officeReactions";
 import { screenPositionsStore, ScreenPosition } from "@/lib/space/screenPositionsStore";
 
@@ -15,19 +15,23 @@ const ReactionPin = memo(function ReactionPin({
 }) {
   const nodeRef = useRef<HTMLDivElement | null>(null);
 
-  useEffect(() => {
-    const applyPos = (positions: Record<string, ScreenPosition>) => {
-      const el = nodeRef.current;
-      if (!el) return;
-      const pos = positions[reaction.peerId];
-      if (!pos || !pos.inView) {
-        el.style.opacity = "0";
-        return;
-      }
-      el.style.opacity = "1";
-      el.style.transform = `translate3d(${pos.screenX}px, ${pos.screenY - 96}px, 0) translate(-50%, -100%)`;
-    };
+  const applyPos = (positions: Record<string, ScreenPosition>) => {
+    const el = nodeRef.current;
+    if (!el) return;
+    const pos = positions[reaction.peerId];
+    if (!pos || !pos.inView) {
+      el.style.opacity = "0";
+      return;
+    }
+    el.style.opacity = "1";
+    el.style.transform = `translate3d(${pos.screenX}px, ${pos.screenY - 96}px, 0) translate(-50%, -100%)`;
+  };
 
+  useLayoutEffect(() => {
+    applyPos(screenPositionsStore.getSnapshot());
+  });
+
+  useEffect(() => {
     applyPos(screenPositionsStore.getSnapshot());
     return screenPositionsStore.subscribe(applyPos);
   }, [reaction.peerId]);
@@ -35,13 +39,8 @@ const ReactionPin = memo(function ReactionPin({
   return (
     <div
       ref={nodeRef}
-      style={{
-        left: 0,
-        top: 0,
-        opacity: 0,
-        willChange: "transform, opacity",
-      }}
-      className="absolute pointer-events-none select-none transition-opacity duration-150"
+      style={{ willChange: "transform, opacity" }}
+      className="absolute top-0 left-0 opacity-0 pointer-events-none select-none transition-opacity duration-150"
     >
       <div className="px-2.5 py-1 rounded-full bg-surface/95 backdrop-blur-md border border-accent shadow-arcade flex items-center gap-1.5 animate-bounce">
         <span className="text-base leading-none">{reaction.emoji}</span>
