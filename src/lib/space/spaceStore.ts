@@ -375,14 +375,33 @@ export async function pollRedisChannel(
       // Skip malformed entry
     }
   }
+  parsedMessages.sort((a, b) => a.seq - b.seq);
 
   const effectiveSince = since > currentSeq ? 0 : since;
-  const unread = filterUnreadMessages(parsedMessages, senderId, effectiveSince, now);
+
+  // Hold the cursor before any brief sequence gap (< 1.5s) so out-of-order concurrent
+  // serverless POSTs cannot cause the client to skip an Offer or ICE candidate.
+  let safeCursor = effectiveSince;
+  const deliverable: CachedMessage[] = [];
+  const gapWindowMs = 1500;
+
+  for (const entry of parsedMessages) {
+    if (entry.seq <= effectiveSince) continue;
+    const isSmallInFlightGap =
+      safeCursor > 0 && entry.seq > safeCursor + 1 && entry.seq - safeCursor <= 10;
+    if (isSmallInFlightGap && now - entry.timestamp < gapWindowMs) {
+      break;
+    }
+    safeCursor = entry.seq;
+    deliverable.push(entry);
+  }
+
+  const unread = filterUnreadMessages(deliverable, senderId, effectiveSince, now);
 
   return {
     messages: unread,
     peers: activePeers,
-    cursor: currentSeq,
+    cursor: safeCursor,
     serverTime: now,
     backend: "redis",
   };

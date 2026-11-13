@@ -49,6 +49,7 @@ export class SpaceSignaling {
   private destroyed = false;
   private discoveredEdgePeers = new Set<string>();
   private dataChannels = new Map<string, RTCDataChannel>();
+  private edgeSendQueue: Promise<void> = Promise.resolve();
   private pageHideHandler: (() => void) | null = null;
   public localPeer: PeerState;
 
@@ -178,23 +179,29 @@ export class SpaceSignaling {
     this.sendToEdge(msg).catch(() => {});
   }
 
-  private async sendToEdge(msg: SignalMessage): Promise<void> {
-    try {
-      await fetch("/api/space/peers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          channel: this.channelName,
-          message: msg,
-          senderId: this.localPeer.id,
-        }),
-      });
-      if (msg.type === "webrtc_signal" || msg.type === "peer_join") {
-        this.scheduleFastPoll();
+  private sendToEdge(msg: SignalMessage): Promise<void> {
+    // Serialize Edge/Redis writes per client so Offer -> Candidates arrive in strict sequence
+    const next = this.edgeSendQueue.then(async () => {
+      if (this.destroyed && msg.type !== "peer_leave") return;
+      try {
+        await fetch("/api/space/peers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            channel: this.channelName,
+            message: msg,
+            senderId: this.localPeer.id,
+          }),
+        });
+        if (msg.type === "webrtc_signal" || msg.type === "peer_join") {
+          this.scheduleFastPoll();
+        }
+      } catch {
+        // Offline/sandbox safe
       }
-    } catch {
-      // Offline/sandbox safe
-    }
+    });
+    this.edgeSendQueue = next;
+    return next;
   }
 
   private scheduleFastPoll(): void {
