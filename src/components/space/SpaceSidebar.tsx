@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { PeerState } from "@/lib/space/signaling";
 import { OFFICE_ZONES, SpaceZone } from "@/lib/space/officeMap";
+import { IconLock, IconMicOff } from "@/components/space/SpaceIcons";
 
 interface ChatMessage {
   id: string;
@@ -159,8 +160,8 @@ export function SpaceSidebar({
                           {peer.name} {isLocal && "(You)"}
                         </span>
                         {!peer.media.audio && (
-                          <span className="text-[10px]" title="Muted">
-                            🔇
+                          <span className="text-red-400 inline-flex items-center" title="Muted">
+                            <IconMicOff className="w-3 h-3" />
                           </span>
                         )}
                       </div>
@@ -226,8 +227,9 @@ export function SpaceSidebar({
 
                     <div className="flex items-center gap-2 pt-1 text-[10px]">
                       {zone.isPrivate && (
-                        <span className="text-accent font-mono">
-                          🔒 Soundproof
+                        <span className="text-accent font-mono inline-flex items-center gap-1">
+                          <IconLock className="w-3 h-3" />
+                          <span>Soundproof</span>
                         </span>
                       )}
                       <span className="text-text-muted font-mono">
