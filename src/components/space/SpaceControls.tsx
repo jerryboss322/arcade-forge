@@ -1,6 +1,23 @@
 "use client";
 
 import React from "react";
+import {
+  IconBubbles,
+  IconCalendar,
+  IconChart,
+  IconCompress,
+  IconCube,
+  IconDock,
+  IconExpand,
+  IconMap,
+  IconMic,
+  IconMicOff,
+  IconPalette,
+  IconScreenShare,
+  IconUsers,
+  IconVideo,
+  IconVideoOff,
+} from "@/components/space/SpaceIcons";
 
 interface SpaceControlsProps {
   isAudioMuted: boolean;
@@ -46,14 +63,23 @@ export function SpaceControls({
   onOpenHelp,
 }: SpaceControlsProps) {
   return (
-    <div className="flex items-center gap-1.5 md:gap-2 p-1.5 bg-surface/90 backdrop-blur-md border-2 border-border rounded-full shadow-arcade">
+    <div
+      role="toolbar"
+      aria-label="Virtual office controls"
+      className="flex items-center gap-1.5 md:gap-2 p-1.5 bg-surface/90 backdrop-blur-md border-2 border-border rounded-full shadow-arcade"
+    >
       {/* 3D vs 2D View Switcher */}
       <button
+        type="button"
         onClick={onToggleViewMode}
         title={`Switch to ${viewMode === "3d" ? "2D Top-Down" : "3D Isometric"} View`}
         className="px-3 h-10 rounded-full flex items-center gap-1.5 bg-surface-2 hover:bg-surface border border-border hover:border-accent text-text text-xs font-display font-bold transition-all active:scale-95"
       >
-        <span className="text-base">{viewMode === "3d" ? "🧊" : "🗺️"}</span>
+        {viewMode === "3d" ? (
+          <IconCube className="w-4 h-4 text-accent" />
+        ) : (
+          <IconMap className="w-4 h-4 text-accent" />
+        )}
         <span className="hidden sm:inline uppercase text-[10px] tracking-wider text-accent">
           {viewMode.toUpperCase()}
         </span>
@@ -63,33 +89,42 @@ export function SpaceControls({
 
       {/* Mic toggle */}
       <button
+        type="button"
         onClick={onToggleAudio}
-        title={isAudioMuted ? "Unmute Microphone" : "Mute Microphone"}
+        aria-pressed={!isAudioMuted}
+        aria-label={isAudioMuted ? "Unmute microphone" : "Mute microphone"}
+        title={isAudioMuted ? "Unmute Microphone (M)" : "Mute Microphone (M)"}
         className={`w-10 h-10 rounded-full flex items-center justify-center transition-transform active:scale-95 ${
           isAudioMuted
             ? "bg-red-500/20 text-red-400 border border-red-500/40"
             : "bg-surface-2 text-text border border-border hover:border-accent"
         }`}
       >
-        <span className="text-sm">{isAudioMuted ? "🔇" : "🎙️"}</span>
+        {isAudioMuted ? <IconMicOff /> : <IconMic />}
       </button>
 
       {/* Cam toggle */}
       <button
+        type="button"
         onClick={onToggleVideo}
-        title={isVideoMuted ? "Turn On Camera" : "Turn Off Camera"}
+        aria-pressed={!isVideoMuted}
+        aria-label={isVideoMuted ? "Turn on camera" : "Turn off camera"}
+        title={isVideoMuted ? "Turn On Camera (V)" : "Turn Off Camera (V)"}
         className={`w-10 h-10 rounded-full flex items-center justify-center transition-transform active:scale-95 ${
           isVideoMuted
             ? "bg-red-500/20 text-red-400 border border-red-500/40"
             : "bg-surface-2 text-text border border-border hover:border-accent"
         }`}
       >
-        <span className="text-sm">{isVideoMuted ? "🚫" : "📹"}</span>
+        {isVideoMuted ? <IconVideoOff /> : <IconVideo />}
       </button>
 
       {/* Screen Share toggle */}
       <button
+        type="button"
         onClick={onToggleScreenShare}
+        aria-pressed={isScreenSharing}
+        aria-label={isScreenSharing ? "Stop sharing screen" : "Share screen"}
         title={isScreenSharing ? "Stop Sharing Screen" : "Share Screen"}
         className={`w-10 h-10 rounded-full flex items-center justify-center transition-transform active:scale-95 ${
           isScreenSharing
@@ -97,47 +132,53 @@ export function SpaceControls({
             : "bg-surface-2 text-text border border-border hover:border-accent"
         }`}
       >
-        <span className="text-sm">🖥️</span>
+        <IconScreenShare />
       </button>
 
       <div className="w-[1px] h-6 bg-border mx-0.5" />
 
       {/* Avatar Customizer */}
       <button
+        type="button"
         onClick={onOpenAvatarCustomizer}
+        aria-label="Customize avatar and status"
         title="Customize Avatar & Status"
         className="w-10 h-10 rounded-full flex items-center justify-center bg-surface-2 text-text border border-border hover:border-accent transition-transform active:scale-95"
       >
-        <span className="text-sm">🎨</span>
+        <IconPalette />
       </button>
 
       {/* Meeting Calendar Schedule */}
       <button
+        type="button"
         onClick={onOpenMeetingSchedule}
+        aria-label="Office schedule and room bookings"
         title="Office Schedule & Room Bookings"
         className="w-10 h-10 rounded-full flex items-center justify-center bg-surface-2 text-text border border-border hover:border-accent transition-transform active:scale-95"
       >
-        <span className="text-sm">📅</span>
+        <IconCalendar />
       </button>
 
       {/* Office Pulse & Live Telemetry */}
       <button
+        type="button"
         onClick={onOpenPulse}
+        aria-label="Live office pulse and telemetry"
         title="Live Office Pulse & WebRTC Telemetry"
         className="w-10 h-10 rounded-full flex items-center justify-center bg-surface-2 text-text border border-border hover:border-accent transition-transform active:scale-95"
       >
-        <span className="text-sm">📊</span>
+        <IconChart />
       </button>
 
       {/* Floating vs Docked Video Layout toggle (Desktop) */}
       <button
+        type="button"
         onClick={onToggleVideoLayout}
+        aria-label={`Switch to ${videoLayout === "floating" ? "docked" : "floating"} video layout`}
         title={`Switch to ${videoLayout === "floating" ? "Docked" : "Floating"} Video`}
         className="hidden md:flex w-10 h-10 rounded-full items-center justify-center bg-surface-2 text-text border border-border hover:border-accent transition-transform active:scale-95"
       >
-        <span className="text-xs font-display font-bold">
-          {videoLayout === "floating" ? "🫧" : "📌"}
-        </span>
+        {videoLayout === "floating" ? <IconBubbles /> : <IconDock />}
       </button>
 
       {/* Sidebar toggle */}
@@ -163,7 +204,7 @@ export function SpaceControls({
             : "bg-surface-2 text-text border border-border hover:border-accent"
         }`}
       >
-        <span className="text-sm">👥</span>
+        <IconUsers />
         {unreadChatCount > 0 && (
           <span className="absolute -top-1 -right-1 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-accent text-bg text-[9px] font-bold flex items-center justify-center shadow-sm border border-surface">
             {unreadChatCount > 99 ? "99+" : unreadChatCount}
@@ -184,28 +225,16 @@ export function SpaceControls({
             : "bg-surface-2 text-text border border-border hover:border-accent"
         }`}
       >
-        {isFullscreen ? (
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M8 3v3a2 2 0 0 1-2 2H3" />
-            <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
-            <path d="M3 16h3a2 2 0 0 1 2 2v3" />
-            <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
-          </svg>
-        ) : (
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M3 8V5a2 2 0 0 1 2-2h3" />
-            <path d="M16 3h3a2 2 0 0 1 2 2v3" />
-            <path d="M21 16v3a2 2 0 0 1-2 2h-3" />
-            <path d="M8 21H5a2 2 0 0 1-2-2v-3" />
-          </svg>
-        )}
+        {isFullscreen ? <IconCompress /> : <IconExpand />}
       </button>
 
       {/* Help / Guide button */}
       <button
+        type="button"
         onClick={onOpenHelp}
-        title="Controls & Keyboard Guide"
-        className="w-10 h-10 rounded-full flex items-center justify-center bg-surface-2 text-text-muted hover:text-text border border-border transition-transform active:scale-95"
+        aria-label="Controls and keyboard guide"
+        title="Controls & Keyboard Guide (?)"
+        className="w-10 h-10 rounded-full flex items-center justify-center bg-surface-2 text-text-muted hover:text-text border border-border hover:border-accent transition-transform active:scale-95"
       >
         <span className="text-xs font-display font-bold">?</span>
       </button>
