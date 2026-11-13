@@ -10,7 +10,7 @@ interface SpaceCard {
   name: string;
   tagline: string;
   tag: string;
-  activeCount: number;
+  status: string;
   bgGradient: string;
   zones: string[];
 }
@@ -21,7 +21,7 @@ const FEATURED_SPACES: SpaceCard[] = [
     name: "Acme Tech HQ",
     tagline: "Startup open workstation pods, soundproof glass boardroom, war room, and espresso lounge.",
     tag: "Remote Engineering HQ",
-    activeCount: 6,
+    status: "Open Floor",
     bgGradient: "from-blue-900/40 via-purple-900/20 to-surface-2",
     zones: ["Boardroom", "War Room", "12 Desks", "Cafe Lounge"],
   },
@@ -30,7 +30,7 @@ const FEATURED_SPACES: SpaceCard[] = [
     name: "Indie Dev Studio",
     tagline: "Creative team floor with Lo-Fi lounge, collaborative whiteboard and sprint war room.",
     tag: "Design & Product Studio",
-    activeCount: 12,
+    status: "Open Floor",
     bgGradient: "from-pink-900/40 via-red-900/20 to-surface-2",
     zones: ["Design Pods", "Sprint Whiteboard", "Social Lounge"],
   },
@@ -39,7 +39,7 @@ const FEATURED_SPACES: SpaceCard[] = [
     name: "Late Night Study Cafe",
     tagline: "Cozy library tables, coffee espresso bar, and ambient deep focus mode.",
     tag: "Coworking & Study",
-    activeCount: 4,
+    status: "Open Floor",
     bgGradient: "from-emerald-900/40 via-teal-900/20 to-surface-2",
     zones: ["Silent Desks", "Lo-Fi Radio", "Espresso Bar"],
   },
@@ -48,7 +48,7 @@ const FEATURED_SPACES: SpaceCard[] = [
     name: "Hacker Den & Standups",
     tagline: "Fast daily sync room with dual-monitor pods and HD presentation screen.",
     tag: "Daily Standups & Demos",
-    activeCount: 8,
+    status: "Open Floor",
     bgGradient: "from-amber-900/40 via-orange-900/20 to-surface-2",
     zones: ["Demo Screen", "Standup Circle", "Focus Desks"],
   },
@@ -216,9 +216,9 @@ export default function HomePage() {
                   <span className="px-2.5 py-0.5 rounded-full text-[10px] font-display font-semibold bg-surface border border-border text-text">
                     {space.tag}
                   </span>
-                  <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-mono font-semibold">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    {space.activeCount} online
+                  <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-mono">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    {space.status}
                   </span>
                 </div>
 
