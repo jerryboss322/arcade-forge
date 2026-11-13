@@ -56,6 +56,11 @@ export function GlobalHeader() {
     { href: "/docs", label: "Guide" },
   ];
 
+  // Full-bleed virtual offices use their own minimal floating canvas HUD
+  if (pathname?.startsWith("/space/")) {
+    return null;
+  }
+
   return (
     <>
       <header className="sticky top-0 z-40 h-14 md:h-16 bg-bg border-b-2 border-border">

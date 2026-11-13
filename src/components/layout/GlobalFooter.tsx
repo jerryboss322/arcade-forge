@@ -2,8 +2,14 @@
 
 import React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 
 export function GlobalFooter() {
+  const pathname = usePathname();
+  if (pathname?.startsWith("/space/")) {
+    return null;
+  }
+
   return (
     <footer className="border-t-2 border-border bg-surface text-text-muted mt-20 pb-20 md:pb-8">
       <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-12">
