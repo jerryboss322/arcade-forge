@@ -17,6 +17,13 @@ import {
 import { ScreenPositionsStore } from "../src/lib/space/screenPositionsStore";
 import { computeSpatialGain } from "../src/lib/space/webrtcMesh";
 import { GET, POST } from "../src/app/api/space/peers/route";
+import {
+  getRedisRestConfig,
+  pollChannel,
+  pollRedisChannel,
+  postChannel,
+  postRedisChannel,
+} from "../src/lib/space/spaceStore";
 
 describe("ForgeSpace Virtual Office", () => {
   it("generates 40x26 office tilemap with zones and collision boundaries", () => {
@@ -409,5 +416,291 @@ describe("ForgeSpace Virtual Office", () => {
     );
     const dataB3 = await pollB3.json();
     expect(dataB3.peers.some((p: { id: string }) => p.id === "peer_a")).toBe(false);
+  });
+});
+
+describe("ForgeSpace Upstash Redis / Vercel KV Store", () => {
+  function createMockUpstashFetch() {
+    const strings = new Map<string, string>();
+    const hashes = new Map<string, Map<string, string>>();
+    const lists = new Map<string, string[]>();
+    const calls: { url: string; auth: string | null; commands: unknown[][] }[] = [];
+
+    const mockFetch = async (input: string | URL | Request, init?: RequestInit) => {
+      const url = typeof input === "string" ? input : input.toString();
+      const headers = new Headers(init?.headers);
+      const commands = JSON.parse(String(init?.body ?? "[]")) as unknown[][];
+      calls.push({ url, auth: headers.get("Authorization"), commands });
+
+      const results = commands.map((cmd) => {
+        const op = String(cmd[0]).toUpperCase();
+        const key = String(cmd[1]);
+
+        if (op === "INCR") {
+          const next = Number(strings.get(key) ?? "0") + 1;
+          strings.set(key, String(next));
+          return { result: next };
+        }
+        if (op === "GET") {
+          return { result: strings.get(key) ?? null };
+        }
+        if (op === "HSET") {
+          let h = hashes.get(key);
+          if (!h) {
+            h = new Map<string, string>();
+            hashes.set(key, h);
+          }
+          h.set(String(cmd[2]), String(cmd[3]));
+          return { result: 1 };
+        }
+        if (op === "HDEL") {
+          const h = hashes.get(key);
+          let deleted = 0;
+          for (const field of cmd.slice(2)) {
+            if (h?.delete(String(field))) deleted += 1;
+          }
+          return { result: deleted };
+        }
+        if (op === "HGETALL") {
+          const h = hashes.get(key);
+          if (!h) return { result: [] };
+          const flat: string[] = [];
+          for (const [k, v] of h.entries()) {
+            flat.push(k, v);
+          }
+          return { result: flat };
+        }
+        if (op === "RPUSH") {
+          let list = lists.get(key);
+          if (!list) {
+            list = [];
+            lists.set(key, list);
+          }
+          for (const item of cmd.slice(2)) {
+            list.push(String(item));
+          }
+          return { result: list.length };
+        }
+        if (op === "LTRIM") {
+          const list = lists.get(key) ?? [];
+          const start = Number(cmd[2]);
+          const stop = Number(cmd[3]);
+          const len = list.length;
+          const s = start < 0 ? Math.max(0, len + start) : start;
+          const e = stop < 0 ? len + stop : Math.min(len - 1, stop);
+          lists.set(key, s <= e ? list.slice(s, e + 1) : []);
+          return { result: "OK" };
+        }
+        if (op === "LRANGE") {
+          const list = lists.get(key) ?? [];
+          const start = Number(cmd[2]);
+          const stop = Number(cmd[3]);
+          const len = list.length;
+          const s = start < 0 ? Math.max(0, len + start) : start;
+          const e = stop < 0 ? len + stop : Math.min(len - 1, stop);
+          return { result: s <= e ? list.slice(s, e + 1) : [] };
+        }
+        if (op === "EXPIRE") {
+          return { result: 1 };
+        }
+        return { result: null };
+      });
+
+      return new Response(JSON.stringify(results), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    };
+
+    return { mockFetch, calls };
+  }
+
+  it("detects both UPSTASH_REDIS_REST_* and KV_REST_API_* env vars", () => {
+    expect(getRedisRestConfig({})).toBeNull();
+
+    expect(
+      getRedisRestConfig({
+        UPSTASH_REDIS_REST_URL: "https://us1-example.upstash.io/",
+        UPSTASH_REDIS_REST_TOKEN: "tok-upstash",
+      })
+    ).toEqual({
+      url: "https://us1-example.upstash.io",
+      token: "tok-upstash",
+    });
+
+    expect(
+      getRedisRestConfig({
+        KV_REST_API_URL: "https://kv-example.vercel-storage.com/",
+        KV_REST_API_TOKEN: "tok-kv",
+      })
+    ).toEqual({
+      url: "https://kv-example.vercel-storage.com",
+      token: "tok-kv",
+    });
+  });
+
+  it("exchanges peers, cursors, and unicast WebRTC signals via Redis REST pipeline", async () => {
+    const { mockFetch, calls } = createMockUpstashFetch();
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = mockFetch as typeof fetch;
+
+    try {
+      const config = {
+        url: "https://redis-mock.upstash.io",
+        token: "secret-token",
+      };
+      const channel = `redis-room-${Date.now()}`;
+      const peerA = {
+        id: "peer_a",
+        name: "Alice",
+        avatarColor: "#00f0ff",
+        x: 5,
+        y: 6,
+        dir: "down" as const,
+        isMoving: false,
+        zoneId: "reception",
+        status: "Focusing",
+        deskClaimed: null,
+        media: { audio: true, video: true, screen: false, speaking: false },
+        updatedAt: 1_700_000_000_000,
+      };
+      const peerB = {
+        ...peerA,
+        id: "peer_b",
+        name: "Bob",
+        x: 7,
+        y: 6,
+      };
+
+      const now = 1_700_000_000_000;
+      await postRedisChannel(
+        config,
+        channel,
+        peerA.id,
+        { type: "peer_join", peer: peerA },
+        now
+      );
+      await postRedisChannel(
+        config,
+        channel,
+        peerB.id,
+        { type: "peer_join", peer: peerB },
+        now + 50
+      );
+
+      expect(calls[0]?.url).toBe("https://redis-mock.upstash.io/pipeline");
+      expect(calls[0]?.auth).toBe("Bearer secret-token");
+
+      const pollB1 = await pollRedisChannel(config, channel, peerB.id, 0, now + 100);
+      expect(pollB1.peers.map((p) => p.id)).toEqual(["peer_a"]);
+      expect(pollB1.cursor).toBe(2);
+
+      await postRedisChannel(
+        config,
+        channel,
+        peerA.id,
+        {
+          type: "webrtc_signal",
+          from: peerA.id,
+          to: peerB.id,
+          payload: { sdp: { type: "offer", sdp: "mock-sdp" } },
+        },
+        now + 150
+      );
+
+      const pollC = await pollRedisChannel(
+        config,
+        channel,
+        "peer_c",
+        pollB1.cursor,
+        now + 200
+      );
+      expect(pollC.peers.map((p) => p.id).sort()).toEqual(["peer_a", "peer_b"]);
+      expect(pollC.messages).toHaveLength(0);
+
+      const pollB2 = await pollRedisChannel(
+        config,
+        channel,
+        peerB.id,
+        pollB1.cursor,
+        now + 200
+      );
+      expect(pollB2.messages).toHaveLength(1);
+      expect(pollB2.messages[0]).toMatchObject({
+        type: "webrtc_signal",
+        from: peerA.id,
+        to: peerB.id,
+      });
+
+      await postRedisChannel(
+        config,
+        channel,
+        peerA.id,
+        { type: "peer_leave", id: peerA.id },
+        now + 250
+      );
+      const pollB3 = await pollRedisChannel(
+        config,
+        channel,
+        peerB.id,
+        pollB2.cursor,
+        now + 300
+      );
+      expect(pollB3.peers).toEqual([]);
+
+      const pollC2 = await pollRedisChannel(
+        config,
+        channel,
+        "peer_c",
+        pollB2.cursor,
+        now + 300
+      );
+      expect(pollC2.peers.map((p) => p.id)).toEqual(["peer_b"]);
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it("falls back to in-memory store when Redis REST fails", async () => {
+    const origFetch = globalThis.fetch;
+    const origUrl = process.env.UPSTASH_REDIS_REST_URL;
+    const origToken = process.env.UPSTASH_REDIS_REST_TOKEN;
+    process.env.UPSTASH_REDIS_REST_URL = "https://unreachable.upstash.io";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "bad-token";
+    globalThis.fetch = (async () => {
+      throw new Error("network down");
+    }) as typeof fetch;
+
+    try {
+      const channel = `fallback-room-${Date.now()}`;
+      const peer = {
+        id: "peer_local",
+        name: "LocalUser",
+        avatarColor: "#ffaa00",
+        x: 3,
+        y: 4,
+        dir: "right" as const,
+        isMoving: false,
+        zoneId: "reception",
+        status: "Idle",
+        deskClaimed: null,
+        media: { audio: false, video: false, screen: false, speaking: false },
+        updatedAt: Date.now(),
+      };
+      const posted = await postChannel(channel, peer.id, {
+        type: "peer_join",
+        peer,
+      });
+      expect(posted.success).toBe(true);
+
+      const polled = await pollChannel(channel, "peer_other", 0);
+      expect(polled.peers.some((p) => p.id === peer.id)).toBe(true);
+    } finally {
+      globalThis.fetch = origFetch;
+      if (origUrl === undefined) delete process.env.UPSTASH_REDIS_REST_URL;
+      else process.env.UPSTASH_REDIS_REST_URL = origUrl;
+      if (origToken === undefined) delete process.env.UPSTASH_REDIS_REST_TOKEN;
+      else process.env.UPSTASH_REDIS_REST_TOKEN = origToken;
+    }
   });
 });
