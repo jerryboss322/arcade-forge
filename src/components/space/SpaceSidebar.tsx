@@ -12,6 +12,8 @@ interface ChatMessage {
   zoneId?: string;
 }
 
+export type SidebarTab = "people" | "rooms" | "chat";
+
 interface SpaceSidebarProps {
   localPeer: PeerState;
   remotePeers: PeerState[];
@@ -21,6 +23,9 @@ interface SpaceSidebarProps {
   onWarpToPeer: (peer: PeerState) => void;
   isOpen: boolean;
   onClose: () => void;
+  activeTab?: SidebarTab;
+  onTabChange?: (tab: SidebarTab) => void;
+  unreadChatCount?: number;
 }
 
 export function SpaceSidebar({
@@ -32,8 +37,16 @@ export function SpaceSidebar({
   onWarpToPeer,
   isOpen,
   onClose,
+  activeTab: controlledTab,
+  onTabChange,
+  unreadChatCount = 0,
 }: SpaceSidebarProps) {
-  const [activeTab, setActiveTab] = useState<"people" | "rooms" | "chat">("people");
+  const [internalTab, setInternalTab] = useState<SidebarTab>("people");
+  const activeTab = controlledTab ?? internalTab;
+  const setActiveTab = (tab: SidebarTab) => {
+    setInternalTab(tab);
+    onTabChange?.(tab);
+  };
   const [chatInput, setChatInput] = useState("");
 
   const allPeers = [localPeer, ...remotePeers];
@@ -47,14 +60,18 @@ export function SpaceSidebar({
 
   return (
     <aside
-      className={`fixed md:relative top-0 right-0 z-30 h-full w-80 bg-surface border-l-2 border-border flex flex-col transition-transform duration-200 ${
-        isOpen ? "translate-x-0" : "translate-x-full md:translate-x-0"
+      aria-hidden={!isOpen}
+      className={`fixed md:relative top-0 right-0 z-30 h-full bg-surface border-border flex flex-col transition-all duration-200 ease-out flex-shrink-0 ${
+        isOpen
+          ? "w-80 translate-x-0 border-l-2 opacity-100"
+          : "w-80 translate-x-full md:w-0 md:translate-x-0 md:border-l-0 md:overflow-hidden md:opacity-0 md:pointer-events-none"
       }`}
     >
       {/* Sidebar Header & Tab Navigation */}
-      <div className="h-14 border-b border-border px-4 flex items-center justify-between">
+      <div className="h-14 border-b border-border px-3 flex items-center justify-between min-w-[20rem]">
         <div className="flex items-center gap-1">
           <button
+            type="button"
             onClick={() => setActiveTab("people")}
             className={`px-2.5 py-1 text-xs font-display rounded-control transition-colors ${
               activeTab === "people"
@@ -65,6 +82,7 @@ export function SpaceSidebar({
             People ({allPeers.length})
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab("rooms")}
             className={`px-2.5 py-1 text-xs font-display rounded-control transition-colors ${
               activeTab === "rooms"
@@ -75,26 +93,37 @@ export function SpaceSidebar({
             Rooms
           </button>
           <button
+            type="button"
             onClick={() => setActiveTab("chat")}
-            className={`px-2.5 py-1 text-xs font-display rounded-control transition-colors flex items-center gap-1 ${
+            className={`px-2.5 py-1 text-xs font-display rounded-control transition-colors flex items-center gap-1.5 ${
               activeTab === "chat"
                 ? "bg-surface-2 text-text font-bold border border-border"
                 : "text-text-muted hover:text-text"
             }`}
           >
             <span>Chat</span>
-            {chatMessages.length > 0 && (
-              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+            {unreadChatCount > 0 ? (
+              <span className="px-1.5 min-w-[1.1rem] h-4 rounded-full bg-accent text-bg text-[10px] font-bold flex items-center justify-center leading-none">
+                {unreadChatCount > 99 ? "99+" : unreadChatCount}
+              </span>
+            ) : (
+              chatMessages.length > 0 && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+              )
             )}
           </button>
         </div>
 
         <button
+          type="button"
           onClick={onClose}
-          className="md:hidden text-text-muted hover:text-text p-1"
-          aria-label="Close sidebar"
+          className="text-text-muted hover:text-text hover:bg-surface-2 p-1.5 rounded-control transition-colors"
+          aria-label="Collapse sidebar"
+          title="Collapse Sidebar (B)"
         >
-          ✕
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="m9 18 6-6-6-6" />
+          </svg>
         </button>
       </div>
 
