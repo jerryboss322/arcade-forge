@@ -5,6 +5,16 @@ import {
   getZoneAt,
   OFFICE_ZONES,
 } from "../src/lib/space/officeMap";
+import {
+  OFFICE_REACTIONS,
+  OFFICE_STATUS_PRESETS,
+  pruneExpiredReactions,
+} from "../src/lib/space/officeReactions";
+import {
+  OFFICE_THEME_LIST,
+  getThemeCssVars,
+} from "../src/lib/space/officeThemes";
+import { ScreenPositionsStore } from "../src/lib/space/screenPositionsStore";
 
 describe("ForgeSpace Virtual Office", () => {
   it("generates 40x26 office tilemap with zones and collision boundaries", () => {
@@ -178,5 +188,50 @@ describe("ForgeSpace Virtual Office", () => {
     const totalUsers = peers.length;
     const monthlySavings = (totalUsers * 7.0).toFixed(2);
     expect(monthlySavings).toBe("35.00");
+  });
+
+  it("prunes expired overhead peer reactions without mutating active ones", () => {
+    expect(OFFICE_REACTIONS.length).toBeGreaterThanOrEqual(5);
+    expect(OFFICE_STATUS_PRESETS).toContain("Focusing");
+
+    const now = 10_000;
+    const reactions = {
+      p1: { peerId: "p1", emoji: "👋", label: "Wave", expiresAt: 9_500 },
+      p2: { peerId: "p2", emoji: "☕", label: "Coffee", expiresAt: 12_500 },
+    };
+
+    const pruned = pruneExpiredReactions(reactions, now);
+    expect(pruned.p1).toBeUndefined();
+    expect(pruned.p2?.label).toBe("Coffee");
+
+    // Calling again while nothing is expired returns the exact same reference
+    const stable = pruneExpiredReactions(pruned, now + 500);
+    expect(stable).toBe(pruned);
+  });
+
+  it("maps office lighting themes to synced CSS variables and 3D lighting tokens", () => {
+    expect(OFFICE_THEME_LIST.length).toBe(3);
+    for (const theme of OFFICE_THEME_LIST) {
+      const vars = getThemeCssVars(theme.id);
+      expect(vars["--color-bg"]).toBe(theme.cssVars.bg);
+      expect(vars["--color-accent"]).toBe(theme.cssVars.accent);
+      expect(theme.scene.hemiIntensity).toBeGreaterThan(0);
+    }
+  });
+
+  it("notifies and unsubscribes listeners in ScreenPositionsStore cleanly", () => {
+    const store = new ScreenPositionsStore();
+    const updates: number[] = [];
+    const unsubscribe = store.subscribe((positions) => {
+      updates.push(Object.keys(positions).length);
+    });
+
+    store.update({ p1: { screenX: 100, screenY: 200, inView: true } });
+    expect(store.getSnapshot().p1?.screenX).toBe(100);
+    expect(updates).toEqual([1]);
+
+    unsubscribe();
+    store.update({});
+    expect(updates).toEqual([1]);
   });
 });
