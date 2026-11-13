@@ -24,6 +24,7 @@ export class WebRTCMeshManager {
   private sendSignalCb: (to: string, payload: any) => void;
   private onRemoteStreamCb: (peerId: string, stream: MediaStream, isSpeaking: boolean) => void;
   private onSpeakingChangeCb: (peerId: string, speaking: boolean) => void;
+  private localPeerId: string;
   private vadInterval: any = null;
 
   public isAudioMuted: boolean = false;
@@ -33,11 +34,13 @@ export class WebRTCMeshManager {
   constructor(
     sendSignal: (to: string, payload: any) => void,
     onRemoteStream: (peerId: string, stream: MediaStream, isSpeaking: boolean) => void,
-    onSpeakingChange: (peerId: string, speaking: boolean) => void
+    onSpeakingChange: (peerId: string, speaking: boolean) => void,
+    localPeerId = ""
   ) {
     this.sendSignalCb = sendSignal;
     this.onRemoteStreamCb = onRemoteStream;
     this.onSpeakingChangeCb = onSpeakingChange;
+    this.localPeerId = localPeerId;
 
     if (typeof window !== "undefined") {
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -72,11 +75,37 @@ export class WebRTCMeshManager {
       }
 
       this.startVoiceActivityDetection();
+      await this.attachLocalStreamToPeers();
       return this.localStream;
     } catch (err) {
       console.warn("Could not capture webcam/microphone:", err);
       // Create silent / blank dummy stream fallback so P2P mesh still functions
-      return this.createDummyStream();
+      const fallback = this.createDummyStream();
+      await this.attachLocalStreamToPeers();
+      return fallback;
+    }
+  }
+
+  /**
+   * Attaches local media tracks to peers that connected before getUserMedia resolved.
+   */
+  private async attachLocalStreamToPeers(): Promise<void> {
+    const activeStream = this.screenStream || this.localStream;
+    if (!activeStream) return;
+
+    for (const [peerId, { pc }] of this.peers) {
+      if (pc.getSenders().length === 0) {
+        activeStream.getTracks().forEach((track) => {
+          pc.addTrack(track, activeStream);
+        });
+        try {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          this.sendSignalCb(peerId, { sdp: pc.localDescription });
+        } catch (err) {
+          console.warn("Error renegotiating local tracks:", err);
+        }
+      }
     }
   }
 
@@ -231,6 +260,15 @@ export class WebRTCMeshManager {
 
     try {
       if (signal.sdp) {
+        // Polite peer rollback when both peers initiate WebRTC offers simultaneously
+        if (signal.sdp.type === "offer" && pc.signalingState !== "stable") {
+          const isPolite = this.localPeerId > fromPeerId;
+          if (!isPolite) {
+            return;
+          }
+          await pc.setLocalDescription({ type: "rollback" });
+        }
+
         await pc.setRemoteDescription(new RTCSessionDescription(signal.sdp));
         if (signal.sdp.type === "offer") {
           const answer = await pc.createAnswer();
