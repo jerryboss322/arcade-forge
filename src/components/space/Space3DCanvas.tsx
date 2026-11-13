@@ -6,7 +6,6 @@ import {
   OfficeTilemap,
   getZoneAt,
   findPath,
-  SpaceZone,
   InteractiveObject,
 } from "@/lib/space/officeMap";
 import { PeerState } from "@/lib/space/signaling";
@@ -14,12 +13,15 @@ import {
   ScreenPosition,
   screenPositionsStore,
 } from "@/lib/space/screenPositionsStore";
+import { OFFICE_THEMES, OfficeTheme } from "@/lib/space/officeThemes";
+import { IconCompass, IconZoomIn, IconZoomOut } from "@/components/space/SpaceIcons";
 
 interface Space3DCanvasProps {
   map: OfficeTilemap;
   localPeer: PeerState;
   remotePeers: PeerState[];
   speakingMap: Record<string, boolean>;
+  theme?: OfficeTheme;
   onMove: (x: number, y: number, dir: PeerState["dir"], isMoving: boolean, zoneId: string) => void;
   onInteract: (obj: InteractiveObject) => void;
   onScreenPositionUpdate?: (positions: Record<string, ScreenPosition>) => void;
@@ -46,6 +48,7 @@ export const Space3DCanvas = memo(function Space3DCanvas({
   localPeer,
   remotePeers,
   speakingMap,
+  theme = OFFICE_THEMES.midnight,
   onMove,
   onInteract,
 }: Space3DCanvasProps) {
@@ -66,6 +69,55 @@ export const Space3DCanvas = memo(function Space3DCanvas({
 
   const onInteractRef = useRef(onInteract);
   onInteractRef.current = onInteract;
+
+  const themeRef = useRef(theme);
+  themeRef.current = theme;
+
+  // Live scene/light refs for instant zero-rebuild theme swaps
+  const sceneRef = useRef<any>(null);
+  const hemiLightRef = useRef<any>(null);
+  const dirLightRef = useRef<any>(null);
+
+  // Camera zoom & yaw controls (synced to animation loop via refs)
+  const zoomRef = useRef(1.0);
+  const yawRef = useRef(0);
+  const [zoomPercent, setZoomPercent] = useState(100);
+  const [yawDeg, setYawDeg] = useState(0);
+
+  const adjustZoom = (delta: number) => {
+    const next = Math.max(0.65, Math.min(1.75, Number((zoomRef.current + delta).toFixed(2))));
+    zoomRef.current = next;
+    setZoomPercent(Math.round(next * 100));
+  };
+
+  const adjustYaw = (deltaRad: number) => {
+    const next = Math.max(-0.7, Math.min(0.7, yawRef.current + deltaRad));
+    yawRef.current = next;
+    setYawDeg(Math.round((next * 180) / Math.PI));
+  };
+
+  const resetCameraView = () => {
+    zoomRef.current = 1.0;
+    yawRef.current = 0;
+    setZoomPercent(100);
+    setYawDeg(0);
+  };
+
+  useEffect(() => {
+    const scene = sceneRef.current;
+    const hemi = hemiLightRef.current;
+    const dir = dirLightRef.current;
+    if (!scene || !hemi || !dir) return;
+
+    scene.background = new THREE.Color(theme.scene.skyHex);
+    if (scene.fog) {
+      scene.fog.color = new THREE.Color(theme.scene.fogHex);
+    }
+    hemi.color.setHex(theme.scene.hemiSkyHex);
+    hemi.groundColor.setHex(theme.scene.hemiGroundHex);
+    hemi.intensity = theme.scene.hemiIntensity;
+    dir.intensity = theme.scene.dirIntensity;
+  }, [theme]);
 
   // Position state in WebGL world space
   const posRef = useRef({
@@ -98,7 +150,6 @@ export const Space3DCanvas = memo(function Space3DCanvas({
   const nearbyObjectRef = useRef<InteractiveObject | null>(null);
 
   const [nearbyObject, setNearbyObject] = useState<InteractiveObject | null>(null);
-  const [activeZone, setActiveZone] = useState<SpaceZone | null>(null);
 
   // Keyboard listeners
   useEffect(() => {
@@ -149,9 +200,11 @@ export const Space3DCanvas = memo(function Space3DCanvas({
     const halfRows = map.rows / 2;
 
     // 1. Scene & High-Performance Renderer
+    const activeTheme = themeRef.current;
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x0e111a);
-    scene.fog = new THREE.Fog(0x0e111a, 34, 72);
+    scene.background = new THREE.Color(activeTheme.scene.skyHex);
+    scene.fog = new THREE.Fog(activeTheme.scene.fogHex, 34, 78);
+    sceneRef.current = scene;
 
     let lastWidth = container.clientWidth || 800;
     let lastHeight = container.clientHeight || 600;
@@ -194,12 +247,30 @@ export const Space3DCanvas = memo(function Space3DCanvas({
     resizeObserver.observe(container);
 
     // 3. Lightweight Single-Pass Lighting (Hemisphere + Directional)
-    const hemiLight = new THREE.HemisphereLight(0xdbeafe, 0x16192e, 1.05);
+    const hemiLight = new THREE.HemisphereLight(
+      activeTheme.scene.hemiSkyHex,
+      activeTheme.scene.hemiGroundHex,
+      activeTheme.scene.hemiIntensity
+    );
     scene.add(hemiLight);
+    hemiLightRef.current = hemiLight;
 
-    const dirLight = new THREE.DirectionalLight(0xfff7ed, 0.9);
+    const dirLight = new THREE.DirectionalLight(0xfff7ed, activeTheme.scene.dirIntensity);
     dirLight.position.set(18, 36, 22);
     scene.add(dirLight);
+    dirLightRef.current = dirLight;
+
+    let camFocusX = posRef.current.worldX;
+    let camFocusZ = posRef.current.worldZ;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY < 0 ? 0.08 : -0.08;
+      const next = Math.max(0.65, Math.min(1.75, Number((zoomRef.current + delta).toFixed(2))));
+      zoomRef.current = next;
+      setZoomPercent(Math.round(next * 100));
+    };
+    container.addEventListener("wheel", handleWheel, { passive: false });
 
     // Track disposable resources for clean unmount
     const geometriesToDispose: any[] = [];
@@ -577,7 +648,6 @@ export const Space3DCanvas = memo(function Space3DCanvas({
     let lastSentDir: PeerState["dir"] = posRef.current.dir;
     let lastSentMoving = false;
     let lastSentZoneId = localPeerRef.current.zoneId;
-    let lastUiZoneId = localPeerRef.current.zoneId;
     let lastNearbyId: string | null = null;
 
     // Reusable vector for 3D->2D projection (zero GC)
@@ -805,10 +875,6 @@ export const Space3DCanvas = memo(function Space3DCanvas({
 
       const curZone = getZoneAt(curCol, curRow, map.zones);
       const curZoneId = curZone?.id || "open_desks";
-      if (curZoneId !== lastUiZoneId) {
-        lastUiZoneId = curZoneId;
-        setActiveZone(curZone);
-      }
 
       let dirName: PeerState["dir"] = "down";
       if (Math.abs(pos.rotation) < 0.5) dirName = "down";
@@ -851,16 +917,18 @@ export const Space3DCanvas = memo(function Space3DCanvas({
         setNearbyObject(closestObj);
       }
 
-      // 8d. Frame-rate Independent Isometric Camera Follow
+      // 8d. Frame-rate Independent Isometric Orbit & Zoom Camera Follow
       const camLerp = 1 - Math.exp(-8 * dt);
-      const targetCamX = pos.worldX;
-      const targetCamY = 16.5;
-      const targetCamZ = pos.worldZ + 18.0;
+      camFocusX += (pos.worldX - camFocusX) * camLerp;
+      camFocusZ += (pos.worldZ - camFocusZ) * camLerp;
 
-      camera.position.x += (targetCamX - camera.position.x) * camLerp;
-      camera.position.y += (targetCamY - camera.position.y) * camLerp;
-      camera.position.z += (targetCamZ - camera.position.z) * camLerp;
-      camera.lookAt(camera.position.x, 1.0, camera.position.z - 18.0);
+      const camDist = 18.0 / zoomRef.current;
+      const camHeight = 16.5 / zoomRef.current;
+      const offsetX = Math.sin(yawRef.current) * camDist;
+      const offsetZ = Math.cos(yawRef.current) * camDist;
+
+      camera.position.set(camFocusX + offsetX, camHeight, camFocusZ + offsetZ);
+      camera.lookAt(camFocusX, 1.0, camFocusZ);
 
       // 8e. Direct 60Hz DOM Screen Position Update for Floating Video Bubbles (0 React renders!)
       const screenPositions: Record<string, ScreenPosition> = {};
@@ -907,6 +975,10 @@ export const Space3DCanvas = memo(function Space3DCanvas({
       resizeObserver.disconnect();
       container.removeEventListener("mousedown", handlePointerDown);
       container.removeEventListener("touchstart", handlePointerDown);
+      container.removeEventListener("wheel", handleWheel);
+      sceneRef.current = null;
+      hemiLightRef.current = null;
+      dirLightRef.current = null;
 
       for (const geo of geometriesToDispose) {
         geo?.dispose?.();
@@ -923,11 +995,11 @@ export const Space3DCanvas = memo(function Space3DCanvas({
   }, [map]);
 
   return (
-    <div ref={containerRef} className="relative w-full h-full overflow-hidden select-none bg-[#0e111a]">
-      {/* Floating Interaction Prompt */}
+    <div ref={containerRef} className="relative w-full h-full overflow-hidden select-none bg-bg">
+      {/* Floating Interaction Prompt (positioned cleanly above SpaceControls dock) */}
       {nearbyObject && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 pointer-events-none animate-bounce">
-          <div className="px-4 py-2 bg-surface border-2 border-accent rounded-control shadow-arcade flex items-center gap-2">
+        <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none animate-bounce">
+          <div className="px-4 py-2 bg-surface/95 backdrop-blur-md border-2 border-accent rounded-control shadow-arcade flex items-center gap-2">
             <span className="w-6 h-6 rounded bg-accent text-bg font-display text-xs font-bold flex items-center justify-center">
               E
             </span>
@@ -943,28 +1015,71 @@ export const Space3DCanvas = memo(function Space3DCanvas({
         </div>
       )}
 
-      {/* Current Zone Badge */}
-      <div className="absolute top-4 left-4 z-10 pointer-events-none">
-        <div className="px-3 py-1.5 bg-surface/90 backdrop-blur-sm border border-border rounded-control shadow-sm flex items-center gap-2">
-          <span
-            className="w-2.5 h-2.5 rounded-full"
-            style={{ backgroundColor: activeZone?.color || "#37E6C4" }}
-          />
-          <div className="flex flex-col">
-            <span className="text-xs font-display text-text font-semibold">
-              {activeZone?.name || "Open Floor"}
-            </span>
-            {activeZone?.isPrivate ? (
-              <span className="text-[10px] text-accent font-mono">
-                🔒 Soundproof Room
-              </span>
-            ) : (
-              <span className="text-[10px] text-emerald-400 font-mono">
-                🧊 3D WebGL (Instanced 60 FPS)
-              </span>
-            )}
-          </div>
-        </div>
+      {/* Top-Right 3D Camera Zoom & Angle Controls */}
+      <div
+        onMouseDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => e.stopPropagation()}
+        className="absolute top-3 right-3 z-20 flex items-center gap-1 px-2 py-1 rounded-full bg-surface/90 backdrop-blur-md border border-border shadow-arcade text-[11px] font-mono text-text"
+      >
+        <button
+          type="button"
+          onClick={() => adjustZoom(-0.15)}
+          title="Zoom Out (or scroll down)"
+          aria-label="Zoom out 3D camera"
+          className="w-6 h-6 rounded-full hover:bg-surface-2 flex items-center justify-center text-text-muted hover:text-text"
+        >
+          <IconZoomOut className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={resetCameraView}
+          title="Reset Camera Zoom & Angle"
+          className="px-1.5 h-6 rounded-full hover:bg-surface-2 text-[10px] font-semibold text-accent-2"
+        >
+          {zoomPercent}%
+        </button>
+        <button
+          type="button"
+          onClick={() => adjustZoom(0.15)}
+          title="Zoom In (or scroll up)"
+          aria-label="Zoom in 3D camera"
+          className="w-6 h-6 rounded-full hover:bg-surface-2 flex items-center justify-center text-text-muted hover:text-text"
+        >
+          <IconZoomIn className="w-3.5 h-3.5" />
+        </button>
+
+        <div className="w-[1px] h-4 bg-border mx-0.5" />
+
+        <button
+          type="button"
+          onClick={() => adjustYaw(-0.2)}
+          title="Orbit Camera Left"
+          aria-label="Rotate camera left"
+          className="px-1.5 h-6 rounded-full hover:bg-surface-2 text-text-muted hover:text-text"
+        >
+          ↺
+        </button>
+        <button
+          type="button"
+          onClick={() => adjustYaw(0.2)}
+          title="Orbit Camera Right"
+          aria-label="Rotate camera right"
+          className="px-1.5 h-6 rounded-full hover:bg-surface-2 text-text-muted hover:text-text"
+        >
+          ↻
+        </button>
+        {yawDeg !== 0 && (
+          <button
+            type="button"
+            onClick={resetCameraView}
+            title="Reset Camera Angle"
+            aria-label="Reset camera angle"
+            className="inline-flex items-center gap-0.5 px-1.5 h-6 rounded-full bg-surface-2 text-accent text-[10px]"
+          >
+            <IconCompass className="w-3 h-3" />
+            <span>{yawDeg > 0 ? `+${yawDeg}°` : `${yawDeg}°`}</span>
+          </button>
+        )}
       </div>
     </div>
   );
