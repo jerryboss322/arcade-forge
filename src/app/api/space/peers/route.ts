@@ -1,11 +1,14 @@
-// Lightweight Edge API for Real-time Peer Discovery & WebRTC Signal Exchange
-// Retains active peer presence & signals in memory with zero database write load.
-// Maintains active peer roster for instant discovery plus incremental message cursors.
+// Lightweight Serverless API for Real-time Peer Discovery & WebRTC Signal Exchange
+// Retains active peer presence & signals in memory with monotonic sequence cursors.
 
 import { NextResponse } from "next/server";
-import { PeerState, SignalMessage } from "@/lib/space/signaling";
+import { PeerState, SignalMessage } from "../../../../lib/space/signaling";
+
+export const dynamic = "force-dynamic";
+export const preferredRegion = "iad1";
 
 interface CachedMessage {
+  seq: number;
   msg: SignalMessage;
   senderId: string;
   timestamp: number;
@@ -17,13 +20,19 @@ interface CachedPeerEntry {
 }
 
 interface CachedChannel {
+  nextSeq: number;
   messages: CachedMessage[];
   peers: Map<string, CachedPeerEntry>;
   lastActive: number;
 }
 
-// In-memory channel cache
-const channels = new Map<string, CachedChannel>();
+// Share channel map across Next.js route reloads within the same Node runtime
+const globalStore = globalThis as typeof globalThis & {
+  __forgespaceChannels?: Map<string, CachedChannel>;
+};
+const channels: Map<string, CachedChannel> =
+  globalStore.__forgespaceChannels ??
+  (globalStore.__forgespaceChannels = new Map<string, CachedChannel>());
 
 function applyPeerUpdate(channel: CachedChannel, message: SignalMessage, now: number): void {
   switch (message.type) {
@@ -84,16 +93,15 @@ function applyPeerUpdate(channel: CachedChannel, message: SignalMessage, now: nu
   }
 }
 
-// Cleanup stale channels, old messages, and inactive peers periodically
-function pruneChannels() {
+function pruneChannels(): void {
   const now = Date.now();
   for (const [key, channel] of channels.entries()) {
-    if (now - channel.lastActive > 60_000) {
+    if (now - channel.lastActive > 120_000) {
       channels.delete(key);
     } else {
       channel.messages = channel.messages
-        .filter((m) => now - m.timestamp < 20_000)
-        .slice(-150);
+        .filter((m) => now - m.timestamp < 30_000)
+        .slice(-200);
 
       for (const [peerId, entry] of channel.peers.entries()) {
         if (now - entry.updatedAt > 35_000) {
@@ -110,7 +118,8 @@ export async function GET(request: Request) {
   const channel = url.searchParams.get("channel");
   const senderId = url.searchParams.get("senderId");
   const sinceParam = url.searchParams.get("since");
-  const since = sinceParam ? Number(sinceParam) : 0;
+  const rawSince = sinceParam ? Number(sinceParam) : 0;
+  const since = Number.isFinite(rawSince) ? rawSince : 0;
   const serverTime = Date.now();
 
   if (!channel) {
@@ -119,20 +128,40 @@ export async function GET(request: Request) {
 
   const ch = channels.get(channel);
   if (!ch) {
-    return NextResponse.json({ messages: [], peers: [], serverTime });
+    return NextResponse.json({
+      messages: [],
+      peers: [],
+      cursor: 0,
+      serverTime,
+    });
   }
 
-  // Filter out messages from requester and older than incremental cursor
+  // Reset cursor if requester's sequence is ahead of a fresh/restarted channel
+  const currentSeq = ch.nextSeq - 1;
+  const effectiveSince = since > currentSeq ? 0 : since;
+
+  // Return strictly newer sequence messages (excluding self & other peers' unicast signals)
   const unread = ch.messages
-    .filter((m) => m.senderId !== senderId && m.timestamp > since)
+    .filter((m) => {
+      if (m.seq <= effectiveSince) return false;
+      if (m.senderId === senderId) return false;
+      if (m.msg.type === "webrtc_signal" && senderId && m.msg.to !== senderId) {
+        return false;
+      }
+      return true;
+    })
     .map((m) => m.msg);
 
-  // Active coworkers currently in the same office channel for instant discovery
   const activePeers = Array.from(ch.peers.values())
     .filter((entry) => entry.peer.id !== senderId)
     .map((entry) => entry.peer);
 
-  return NextResponse.json({ messages: unread, peers: activePeers, serverTime });
+  return NextResponse.json({
+    messages: unread,
+    peers: activePeers,
+    cursor: currentSeq,
+    serverTime,
+  });
 }
 
 export async function POST(request: Request) {
@@ -150,6 +179,7 @@ export async function POST(request: Request) {
 
     if (!channels.has(channel)) {
       channels.set(channel, {
+        nextSeq: 1,
         messages: [],
         peers: new Map(),
         lastActive: Date.now(),
@@ -162,24 +192,26 @@ export async function POST(request: Request) {
 
     applyPeerUpdate(ch, message, now);
 
-    // Deduplicate high-frequency peer_move and peer_status updates per sender
+    // Keep latest peer_move / peer_status per sender while advancing monotonic seq
     if (message.type === "peer_move" || message.type === "peer_status") {
       ch.messages = ch.messages.filter(
         (m) => !(m.senderId === senderId && m.msg.type === message.type)
       );
     }
 
+    const seq = ch.nextSeq++;
     ch.messages.push({
+      seq,
       msg: message,
       senderId,
       timestamp: now,
     });
 
-    if (ch.messages.length > 150) {
-      ch.messages.splice(0, ch.messages.length - 150);
+    if (ch.messages.length > 200) {
+      ch.messages.splice(0, ch.messages.length - 200);
     }
 
-    return NextResponse.json({ success: true, serverTime: now });
+    return NextResponse.json({ success: true, seq, serverTime: now });
   } catch {
     return NextResponse.json({ error: "Failed to post message" }, { status: 500 });
   }
