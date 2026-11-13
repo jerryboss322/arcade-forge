@@ -28,6 +28,7 @@ import { TheaterModal } from "@/components/space/TheaterModal";
 import { AvatarCustomizerModal } from "@/components/space/AvatarCustomizerModal";
 import { MeetingScheduleModal } from "@/components/space/MeetingScheduleModal";
 import { RoomLockModal } from "@/components/space/RoomLockModal";
+import { OfficePulseModal } from "@/components/space/OfficePulseModal";
 import { ArcadeDialog } from "@/components/ui/ArcadeDialog";
 import { officeAudio } from "@/lib/space/officeAudio";
 
@@ -109,6 +110,7 @@ export function SpaceView({
   const [avatarModalOpen, setAvatarModalOpen] = useState(false);
   const [meetingModalOpen, setMeetingModalOpen] = useState(false);
   const [roomLockModalOpen, setRoomLockModalOpen] = useState(false);
+  const [pulseModalOpen, setPulseModalOpen] = useState(false);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [coffeeBoostNotice, setCoffeeBoostNotice] = useState(false);
   const [inviteCopied, setInviteCopied] = useState(false);
@@ -602,6 +604,7 @@ export function SpaceView({
               }
               onOpenAvatarCustomizer={() => setAvatarModalOpen(true)}
               onOpenMeetingSchedule={() => setMeetingModalOpen(true)}
+              onOpenPulse={() => setPulseModalOpen(true)}
               onOpenHelp={() => setHelpModalOpen(true)}
             />
           </div>
@@ -678,6 +681,14 @@ export function SpaceView({
           const zone = OFFICE_ZONES.find((z) => z.id === zoneId);
           if (zone) handleWarpToRoom(zone);
         }}
+      />
+
+      <OfficePulseModal
+        open={pulseModalOpen}
+        onClose={() => setPulseModalOpen(false)}
+        spaceName={spaceName}
+        localPeer={localPeer}
+        remotePeers={remotePeers}
       />
 
       {activeLockZone && (

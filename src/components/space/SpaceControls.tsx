@@ -17,6 +17,7 @@ interface SpaceControlsProps {
   onToggleViewMode: () => void;
   onOpenAvatarCustomizer: () => void;
   onOpenMeetingSchedule: () => void;
+  onOpenPulse: () => void;
   onOpenHelp: () => void;
 }
 
@@ -35,6 +36,7 @@ export function SpaceControls({
   onToggleViewMode,
   onOpenAvatarCustomizer,
   onOpenMeetingSchedule,
+  onOpenPulse,
   onOpenHelp,
 }: SpaceControlsProps) {
   return (
@@ -110,6 +112,15 @@ export function SpaceControls({
         className="w-10 h-10 rounded-full flex items-center justify-center bg-surface-2 text-text border border-border hover:border-accent transition-transform active:scale-95"
       >
         <span className="text-sm">📅</span>
+      </button>
+
+      {/* Office Pulse & Live Telemetry */}
+      <button
+        onClick={onOpenPulse}
+        title="Live Office Pulse & WebRTC Telemetry"
+        className="w-10 h-10 rounded-full flex items-center justify-center bg-surface-2 text-text border border-border hover:border-accent transition-transform active:scale-95"
+      >
+        <span className="text-sm">📊</span>
       </button>
 
       {/* Floating vs Docked Video Layout toggle (Desktop) */}
