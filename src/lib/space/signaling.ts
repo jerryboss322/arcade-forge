@@ -107,11 +107,25 @@ export class SpaceSignaling {
     // 3. Coalesce high-frequency peer_move messages for Edge API so multi-user HTTP stays light
     if (typeof window !== "undefined") {
       if (msg.type === "peer_move") {
-        this.scheduleEdgeMoveFlush(msg);
+        // Skip HTTP/Redis coordinate writes when solo or every known peer already receives P2P DataChannel updates
+        if (this.discoveredEdgePeers.size > 0 && !this.hasOpenChannelForAllPeers()) {
+          this.scheduleEdgeMoveFlush(msg);
+        }
       } else {
         this.sendToEdge(msg).catch(() => {});
       }
     }
+  }
+
+  private hasOpenChannelForAllPeers(): boolean {
+    if (this.discoveredEdgePeers.size === 0) return false;
+    for (const peerId of this.discoveredEdgePeers) {
+      const dc = this.dataChannels.get(peerId);
+      if (!dc || dc.readyState !== "open") {
+        return false;
+      }
+    }
+    return true;
   }
 
   /**
@@ -206,10 +220,20 @@ export class SpaceSignaling {
           this.lastEdgeCursor = data.cursor;
         }
         if (Array.isArray(data.peers)) {
+          const activeIds = new Set<string>();
           for (const peer of data.peers as PeerState[]) {
-            if (peer.id !== this.localPeer.id && !this.discoveredEdgePeers.has(peer.id)) {
-              this.discoveredEdgePeers.add(peer.id);
-              this.onMessageCb({ type: "peer_join", peer });
+            if (peer.id !== this.localPeer.id) {
+              activeIds.add(peer.id);
+              if (!this.discoveredEdgePeers.has(peer.id)) {
+                this.discoveredEdgePeers.add(peer.id);
+                this.onMessageCb({ type: "peer_join", peer });
+              }
+            }
+          }
+          for (const knownId of Array.from(this.discoveredEdgePeers)) {
+            if (!activeIds.has(knownId)) {
+              this.discoveredEdgePeers.delete(knownId);
+              this.onMessageCb({ type: "peer_leave", id: knownId });
             }
           }
         }
