@@ -8,11 +8,15 @@ interface SpaceControlsProps {
   isScreenSharing: boolean;
   isSidebarOpen: boolean;
   videoLayout: "floating" | "docked";
+  viewMode: "3d" | "2d";
   onToggleAudio: () => void;
   onToggleVideo: () => void;
   onToggleScreenShare: () => void;
   onToggleSidebar: () => void;
   onToggleVideoLayout: () => void;
+  onToggleViewMode: () => void;
+  onOpenAvatarCustomizer: () => void;
+  onOpenMeetingSchedule: () => void;
   onOpenHelp: () => void;
 }
 
@@ -22,15 +26,33 @@ export function SpaceControls({
   isScreenSharing,
   isSidebarOpen,
   videoLayout,
+  viewMode,
   onToggleAudio,
   onToggleVideo,
   onToggleScreenShare,
   onToggleSidebar,
   onToggleVideoLayout,
+  onToggleViewMode,
+  onOpenAvatarCustomizer,
+  onOpenMeetingSchedule,
   onOpenHelp,
 }: SpaceControlsProps) {
   return (
-    <div className="flex items-center gap-2 p-1.5 bg-surface/90 backdrop-blur-md border-2 border-border rounded-full shadow-arcade">
+    <div className="flex items-center gap-1.5 md:gap-2 p-1.5 bg-surface/90 backdrop-blur-md border-2 border-border rounded-full shadow-arcade">
+      {/* 3D vs 2D View Switcher */}
+      <button
+        onClick={onToggleViewMode}
+        title={`Switch to ${viewMode === "3d" ? "2D Top-Down" : "3D Isometric"} View`}
+        className="px-3 h-10 rounded-full flex items-center gap-1.5 bg-surface-2 hover:bg-surface border border-border hover:border-accent text-text text-xs font-display font-bold transition-all active:scale-95"
+      >
+        <span className="text-base">{viewMode === "3d" ? "🧊" : "🗺️"}</span>
+        <span className="hidden sm:inline uppercase text-[10px] tracking-wider text-accent">
+          {viewMode.toUpperCase()}
+        </span>
+      </button>
+
+      <div className="w-[1px] h-6 bg-border mx-0.5" />
+
       {/* Mic toggle */}
       <button
         onClick={onToggleAudio}
@@ -71,6 +93,24 @@ export function SpaceControls({
       </button>
 
       <div className="w-[1px] h-6 bg-border mx-0.5" />
+
+      {/* Avatar Customizer */}
+      <button
+        onClick={onOpenAvatarCustomizer}
+        title="Customize Avatar & Status"
+        className="w-10 h-10 rounded-full flex items-center justify-center bg-surface-2 text-text border border-border hover:border-accent transition-transform active:scale-95"
+      >
+        <span className="text-sm">🎨</span>
+      </button>
+
+      {/* Meeting Calendar Schedule */}
+      <button
+        onClick={onOpenMeetingSchedule}
+        title="Office Schedule & Room Bookings"
+        className="w-10 h-10 rounded-full flex items-center justify-center bg-surface-2 text-text border border-border hover:border-accent transition-transform active:scale-95"
+      >
+        <span className="text-sm">📅</span>
+      </button>
 
       {/* Floating vs Docked Video Layout toggle (Desktop) */}
       <button
