@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { OFFICE_REACTIONS, OfficeReactionPreset } from "@/lib/space/officeReactions";
 import { OfficeThemeId, OFFICE_THEMES } from "@/lib/space/officeThemes";
+import { AudioScope } from "@/lib/space/webrtcMesh";
 import {
   IconBubbles,
   IconCalendar,
@@ -21,7 +22,6 @@ import {
   IconSmile,
   IconSparkles,
   IconSun,
-  IconUsers,
   IconVideo,
   IconVideoOff,
 } from "@/components/space/SpaceIcons";
@@ -30,19 +30,18 @@ interface SpaceControlsProps {
   isAudioMuted: boolean;
   isVideoMuted: boolean;
   isScreenSharing: boolean;
-  isSidebarOpen: boolean;
-  unreadChatCount?: number;
   isFullscreen: boolean;
   videoLayout: "floating" | "docked";
   viewMode: "3d" | "2d";
   themeId: OfficeThemeId;
+  audioScope: AudioScope;
   onToggleAudio: () => void;
   onToggleVideo: () => void;
   onToggleScreenShare: () => void;
-  onToggleSidebar: () => void;
   onToggleFullscreen: () => void;
   onToggleVideoLayout: () => void;
   onToggleViewMode: () => void;
+  onToggleAudioScope: () => void;
   onCycleTheme: () => void;
   onTriggerReaction: (reaction: OfficeReactionPreset) => void;
   onOpenAvatarCustomizer: () => void;
@@ -55,19 +54,18 @@ export function SpaceControls({
   isAudioMuted,
   isVideoMuted,
   isScreenSharing,
-  isSidebarOpen,
-  unreadChatCount = 0,
   isFullscreen,
   videoLayout,
   viewMode,
   themeId,
+  audioScope,
   onToggleAudio,
   onToggleVideo,
   onToggleScreenShare,
-  onToggleSidebar,
   onToggleFullscreen,
   onToggleVideoLayout,
   onToggleViewMode,
+  onToggleAudioScope,
   onCycleTheme,
   onTriggerReaction,
   onOpenAvatarCustomizer,
@@ -78,18 +76,91 @@ export function SpaceControls({
   const [reactionsOpen, setReactionsOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   const dockRef = useRef<HTMLDivElement | null>(null);
+  const toolbarRef = useRef<HTMLDivElement | null>(null);
 
+  // Close open panels on outside pointerdown or Escape
   useEffect(() => {
     if (!reactionsOpen && !moreOpen) return;
-    const handleOutside = (e: MouseEvent) => {
+    const handleOutside = (e: PointerEvent) => {
       if (dockRef.current && !dockRef.current.contains(e.target as Node)) {
         setReactionsOpen(false);
         setMoreOpen(false);
       }
     };
-    window.addEventListener("mousedown", handleOutside);
-    return () => window.removeEventListener("mousedown", handleOutside);
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setReactionsOpen(false);
+        setMoreOpen(false);
+      }
+    };
+    window.addEventListener("pointerdown", handleOutside);
+    window.addEventListener("keydown", handleKey);
+    return () => {
+      window.removeEventListener("pointerdown", handleOutside);
+      window.removeEventListener("keydown", handleKey);
+    };
   }, [reactionsOpen, moreOpen]);
+
+  // Roving tabindex fallback for role="toolbar" when native focusgroup is unsupported
+  useEffect(() => {
+    const bar = toolbarRef.current;
+    if (!bar || "focusGroup" in HTMLElement.prototype) return;
+
+    const getItems = () =>
+      Array.from(bar.querySelectorAll<HTMLButtonElement>("button"));
+
+    const items = getItems();
+    items.forEach((b, i) => {
+      b.tabIndex = i === 0 ? 0 : -1;
+    });
+
+    const onFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLButtonElement | null;
+      const currentItems = getItems();
+      if (target && currentItems.includes(target)) {
+        currentItems.forEach((b) => {
+          b.tabIndex = b === target ? 0 : -1;
+        });
+      }
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const currentItems = getItems();
+      const idx = currentItems.indexOf(document.activeElement as HTMLButtonElement);
+      if (idx === -1 || currentItems.length === 0) return;
+
+      const rtl = getComputedStyle(bar).direction === "rtl";
+      const delta =
+        e.key === "ArrowRight"
+          ? rtl
+            ? -1
+            : 1
+          : e.key === "ArrowLeft"
+            ? rtl
+              ? 1
+              : -1
+            : 0;
+
+      if (delta !== 0) {
+        e.preventDefault();
+        const nextIdx = (idx + delta + currentItems.length) % currentItems.length;
+        currentItems[nextIdx]?.focus();
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        currentItems[0]?.focus();
+      } else if (e.key === "End") {
+        e.preventDefault();
+        currentItems[currentItems.length - 1]?.focus();
+      }
+    };
+
+    bar.addEventListener("focusin", onFocusIn);
+    bar.addEventListener("keydown", onKeyDown);
+    return () => {
+      bar.removeEventListener("focusin", onFocusIn);
+      bar.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
 
   const activeTheme = OFFICE_THEMES[themeId];
   const ThemeIcon =
@@ -97,12 +168,11 @@ export function SpaceControls({
 
   return (
     <div ref={dockRef} className="relative flex flex-col items-center">
-      {/* Reactions Floating Popover */}
+      {/* Quick Reactions Popover */}
       {reactionsOpen && (
         <div
-          role="menu"
           aria-label="Quick floor reactions"
-          className="mb-2 px-2 py-1.5 bg-surface/95 backdrop-blur-md border border-border rounded-full shadow-arcade flex items-center gap-1"
+          className="mb-2 px-1.5 py-1 bg-surface/92 backdrop-blur-xl border border-border/80 rounded-full shadow-arcade flex items-center gap-0.5"
         >
           {OFFICE_REACTIONS.map((reaction) => (
             <button
@@ -112,6 +182,7 @@ export function SpaceControls({
                 onTriggerReaction(reaction);
                 setReactionsOpen(false);
               }}
+              aria-label={`React with ${reaction.label}`}
               title={`${reaction.label} (${reaction.shortcut})`}
               className="px-2 py-1 rounded-full hover:bg-surface-2 flex items-center gap-1 text-xs transition-transform active:scale-95"
             >
@@ -124,293 +195,246 @@ export function SpaceControls({
         </div>
       )}
 
-      {/* Mobile Overflow Menu Popover */}
+      {/* Compact Unified Tools & Settings Popover */}
       {moreOpen && (
         <div
-          role="menu"
-          aria-label="More office tools"
-          className="md:hidden mb-2 p-2 bg-surface/95 backdrop-blur-md border border-border rounded-card shadow-arcade grid grid-cols-2 gap-1.5 min-w-[13rem]"
+          aria-label="Office tools and settings"
+          className="mb-2 p-2 w-60 bg-surface/95 backdrop-blur-xl border border-border/80 rounded-2xl shadow-arcade space-y-1.5 text-xs"
         >
-          <button
-            type="button"
-            onClick={() => {
-              onOpenAvatarCustomizer();
-              setMoreOpen(false);
-            }}
-            className="px-2.5 py-2 rounded-control bg-surface-2 hover:border-accent border border-border text-xs text-text flex items-center gap-2"
-          >
-            <IconPalette className="w-3.5 h-3.5 text-accent" />
-            <span>Avatar</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              onOpenMeetingSchedule();
-              setMoreOpen(false);
-            }}
-            className="px-2.5 py-2 rounded-control bg-surface-2 hover:border-accent border border-border text-xs text-text flex items-center gap-2"
-          >
-            <IconCalendar className="w-3.5 h-3.5 text-accent" />
-            <span>Schedule</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              onOpenPulse();
-              setMoreOpen(false);
-            }}
-            className="px-2.5 py-2 rounded-control bg-surface-2 hover:border-accent border border-border text-xs text-text flex items-center gap-2"
-          >
-            <IconChart className="w-3.5 h-3.5 text-accent" />
-            <span>Pulse</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              onCycleTheme();
-              setMoreOpen(false);
-            }}
-            className="px-2.5 py-2 rounded-control bg-surface-2 hover:border-accent border border-border text-xs text-text flex items-center gap-2"
-          >
-            <ThemeIcon className="w-3.5 h-3.5 text-accent-2" />
-            <span className="truncate">{activeTheme.name.split(" ")[0]}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              onOpenHelp();
-              setMoreOpen(false);
-            }}
-            className="col-span-2 px-2.5 py-2 rounded-control bg-surface-2 hover:border-accent border border-border text-xs text-text flex items-center justify-center gap-2"
-          >
-            <span className="font-display font-bold text-accent">?</span>
-            <span>Controls &amp; Shortcuts</span>
-          </button>
+          <div className="grid grid-cols-2 gap-1">
+            <button
+              type="button"
+              onClick={() => {
+                onToggleAudioScope();
+                setMoreOpen(false);
+              }}
+              className="px-2.5 py-2 rounded-xl bg-surface-2/80 hover:bg-surface-2 border border-border/60 hover:border-accent text-text flex items-center gap-1.5 text-left transition-colors"
+            >
+              <IconMic className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+              <span className="truncate font-medium">
+                {audioScope === "office" ? "Office Audio" : "Proximity"}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                onToggleVideoLayout();
+                setMoreOpen(false);
+              }}
+              className="px-2.5 py-2 rounded-xl bg-surface-2/80 hover:bg-surface-2 border border-border/60 hover:border-accent text-text flex items-center gap-1.5 text-left transition-colors"
+            >
+              {videoLayout === "floating" ? (
+                <IconBubbles className="w-3.5 h-3.5 text-accent-2 flex-shrink-0" />
+              ) : (
+                <IconDock className="w-3.5 h-3.5 text-accent-2 flex-shrink-0" />
+              )}
+              <span className="truncate font-medium">
+                {videoLayout === "floating" ? "Bubbles" : "Docked"}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                onCycleTheme();
+                setMoreOpen(false);
+              }}
+              className="px-2.5 py-2 rounded-xl bg-surface-2/80 hover:bg-surface-2 border border-border/60 hover:border-accent text-text flex items-center gap-1.5 text-left transition-colors"
+            >
+              <ThemeIcon className="w-3.5 h-3.5 text-accent-2 flex-shrink-0" />
+              <span className="truncate font-medium">
+                {activeTheme.name.split(" ")[0]}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                onToggleFullscreen();
+                setMoreOpen(false);
+              }}
+              className="px-2.5 py-2 rounded-xl bg-surface-2/80 hover:bg-surface-2 border border-border/60 hover:border-accent text-text flex items-center gap-1.5 text-left transition-colors"
+            >
+              {isFullscreen ? (
+                <IconCompress className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+              ) : (
+                <IconExpand className="w-3.5 h-3.5 text-accent flex-shrink-0" />
+              )}
+              <span className="truncate font-medium">
+                {isFullscreen ? "Exit Full" : "Fullscreen"}
+              </span>
+            </button>
+          </div>
+
+          <div className="border-t border-border/60 pt-1.5 space-y-0.5">
+            <button
+              type="button"
+              onClick={() => {
+                onOpenAvatarCustomizer();
+                setMoreOpen(false);
+              }}
+              className="w-full px-2.5 py-1.5 rounded-lg hover:bg-surface-2 text-text flex items-center gap-2 transition-colors"
+            >
+              <IconPalette className="w-3.5 h-3.5 text-accent" />
+              <span>Avatar &amp; Status</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                onOpenMeetingSchedule();
+                setMoreOpen(false);
+              }}
+              className="w-full px-2.5 py-1.5 rounded-lg hover:bg-surface-2 text-text flex items-center gap-2 transition-colors"
+            >
+              <IconCalendar className="w-3.5 h-3.5 text-accent" />
+              <span>Schedule &amp; Rooms</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                onOpenPulse();
+                setMoreOpen(false);
+              }}
+              className="w-full px-2.5 py-1.5 rounded-lg hover:bg-surface-2 text-text flex items-center gap-2 transition-colors"
+            >
+              <IconChart className="w-3.5 h-3.5 text-accent" />
+              <span>Office Telemetry</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                onOpenHelp();
+                setMoreOpen(false);
+              }}
+              className="w-full px-2.5 py-1.5 rounded-lg hover:bg-surface-2 text-text-muted hover:text-text flex items-center justify-between transition-colors"
+            >
+              <span>Controls &amp; Shortcuts</span>
+              <kbd className="px-1.5 py-0.5 text-[10px] font-mono bg-bg rounded border border-border">
+                ?
+              </kbd>
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Main Floating Toolbar */}
+      {/* Slim Floating Bottom Toolbar (6 core controls) */}
       <div
+        ref={toolbarRef}
         role="toolbar"
         aria-label="Virtual office controls"
-        className="flex items-center gap-1 md:gap-1.5 p-1.5 bg-surface/90 backdrop-blur-md border-2 border-border rounded-full shadow-arcade"
+        {...({ focusgroup: "toolbar wrap" } as Record<string, string>)}
+        className="flex items-center gap-1 p-1.5 bg-surface/85 backdrop-blur-xl border border-border/80 rounded-full shadow-arcade"
       >
-        {/* 3D vs 2D View Switcher */}
-        <button
-          type="button"
-          onClick={onToggleViewMode}
-          title={`Switch to ${viewMode === "3d" ? "2D Top-Down" : "3D Isometric"} View`}
-          className="px-2.5 sm:px-3 h-9 sm:h-10 rounded-full flex items-center gap-1.5 bg-surface-2 hover:bg-surface border border-border hover:border-accent text-text text-xs font-display font-bold transition-all active:scale-95"
-        >
-          {viewMode === "3d" ? (
-            <IconCube className="w-4 h-4 text-accent" />
-          ) : (
-            <IconMap className="w-4 h-4 text-accent" />
-          )}
-          <span className="hidden sm:inline uppercase text-[10px] tracking-wider text-accent">
-            {viewMode.toUpperCase()}
-          </span>
-        </button>
+        <div role="group" aria-label="Audio and video" className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={onToggleAudio}
+            aria-pressed={!isAudioMuted}
+            aria-label="Microphone"
+            title={isAudioMuted ? "Unmute Microphone (M)" : "Mute Microphone (M)"}
+            className={`min-w-[2.25rem] min-h-[2.25rem] sm:min-w-[2.375rem] sm:min-h-[2.375rem] rounded-full flex items-center justify-center transition-colors border ${
+              isAudioMuted
+                ? "bg-red-500/20 text-red-400 border-red-500/40"
+                : "bg-surface-2/80 text-text border-border/70 hover:border-accent"
+            }`}
+          >
+            {isAudioMuted ? <IconMicOff className="w-4 h-4" /> : <IconMic className="w-4 h-4" />}
+          </button>
 
-        <div className="w-[1px] h-5 bg-border mx-0.5" />
+          <button
+            type="button"
+            onClick={onToggleVideo}
+            aria-pressed={!isVideoMuted}
+            aria-label="Camera"
+            title={isVideoMuted ? "Turn On Camera (V)" : "Turn Off Camera (V)"}
+            className={`min-w-[2.25rem] min-h-[2.25rem] sm:min-w-[2.375rem] sm:min-h-[2.375rem] rounded-full flex items-center justify-center transition-colors border ${
+              isVideoMuted
+                ? "bg-red-500/20 text-red-400 border-red-500/40"
+                : "bg-surface-2/80 text-text border-border/70 hover:border-accent"
+            }`}
+          >
+            {isVideoMuted ? <IconVideoOff className="w-4 h-4" /> : <IconVideo className="w-4 h-4" />}
+          </button>
 
-        {/* Mic toggle */}
-        <button
-          type="button"
-          onClick={onToggleAudio}
-          aria-pressed={!isAudioMuted}
-          aria-label={isAudioMuted ? "Unmute microphone" : "Mute microphone"}
-          title={isAudioMuted ? "Unmute Microphone (M)" : "Mute Microphone (M)"}
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-transform active:scale-95 ${
-            isAudioMuted
-              ? "bg-red-500/20 text-red-400 border border-red-500/40"
-              : "bg-surface-2 text-text border border-border hover:border-accent"
-          }`}
-        >
-          {isAudioMuted ? <IconMicOff /> : <IconMic />}
-        </button>
+          <button
+            type="button"
+            onClick={onToggleScreenShare}
+            aria-pressed={isScreenSharing}
+            aria-label="Share screen"
+            title={isScreenSharing ? "Stop Sharing Screen" : "Share Screen"}
+            className={`min-w-[2.25rem] min-h-[2.25rem] sm:min-w-[2.375rem] sm:min-h-[2.375rem] rounded-full flex items-center justify-center transition-colors border ${
+              isScreenSharing
+                ? "bg-accent text-bg border-accent shadow-sm"
+                : "bg-surface-2/80 text-text border-border/70 hover:border-accent"
+            }`}
+          >
+            <IconScreenShare className="w-4 h-4" />
+          </button>
+        </div>
 
-        {/* Cam toggle */}
-        <button
-          type="button"
-          onClick={onToggleVideo}
-          aria-pressed={!isVideoMuted}
-          aria-label={isVideoMuted ? "Turn on camera" : "Turn off camera"}
-          title={isVideoMuted ? "Turn On Camera (V)" : "Turn Off Camera (V)"}
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-transform active:scale-95 ${
-            isVideoMuted
-              ? "bg-red-500/20 text-red-400 border border-red-500/40"
-              : "bg-surface-2 text-text border border-border hover:border-accent"
-          }`}
-        >
-          {isVideoMuted ? <IconVideoOff /> : <IconVideo />}
-        </button>
+        <span
+          role="separator"
+          aria-orientation="vertical"
+          className="w-[1px] h-5 bg-border/80 mx-0.5 border-l border-transparent"
+        />
 
-        {/* Screen Share toggle */}
-        <button
-          type="button"
-          onClick={onToggleScreenShare}
-          aria-pressed={isScreenSharing}
-          aria-label={isScreenSharing ? "Stop sharing screen" : "Share screen"}
-          title={isScreenSharing ? "Stop Sharing Screen" : "Share Screen"}
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-transform active:scale-95 ${
-            isScreenSharing
-              ? "bg-accent text-bg border border-accent shadow-sm"
-              : "bg-surface-2 text-text border border-border hover:border-accent"
-          }`}
-        >
-          <IconScreenShare />
-        </button>
+        <div role="group" aria-label="Space views and actions" className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => {
+              setReactionsOpen((v) => !v);
+              setMoreOpen(false);
+            }}
+            aria-expanded={reactionsOpen}
+            aria-label="Reactions"
+            title="Quick Reactions (1–5)"
+            className={`min-w-[2.25rem] min-h-[2.25rem] sm:min-w-[2.375rem] sm:min-h-[2.375rem] rounded-full flex items-center justify-center transition-colors border ${
+              reactionsOpen
+                ? "bg-accent/20 text-accent border-accent"
+                : "bg-surface-2/80 text-text border-border/70 hover:border-accent"
+            }`}
+          >
+            <IconSmile className="w-4 h-4" />
+          </button>
 
-        {/* Quick Reactions Popover Trigger */}
-        <button
-          type="button"
-          onClick={() => {
-            setReactionsOpen((v) => !v);
-            setMoreOpen(false);
-          }}
-          aria-expanded={reactionsOpen}
-          aria-label="Send quick reaction"
-          title="Quick Reactions (Keys 1–5)"
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-transform active:scale-95 ${
-            reactionsOpen
-              ? "bg-accent/20 text-accent border border-accent"
-              : "bg-surface-2 text-text border border-border hover:border-accent"
-          }`}
-        >
-          <IconSmile />
-        </button>
+          <button
+            type="button"
+            onClick={onToggleViewMode}
+            aria-pressed={viewMode === "3d"}
+            aria-label="3D view"
+            title={`Switch to ${viewMode === "3d" ? "2D Top-Down" : "3D Isometric"} View`}
+            className="min-w-[2.25rem] min-h-[2.25rem] sm:min-h-[2.375rem] px-2.5 rounded-full flex items-center gap-1 bg-surface-2/80 hover:bg-surface-2 border border-border/70 hover:border-accent text-text text-[11px] font-display font-bold transition-colors"
+          >
+            {viewMode === "3d" ? (
+              <IconCube className="w-3.5 h-3.5 text-accent" />
+            ) : (
+              <IconMap className="w-3.5 h-3.5 text-accent" />
+            )}
+            <span className="uppercase tracking-wider">{viewMode.toUpperCase()}</span>
+          </button>
 
-        <div className="hidden md:block w-[1px] h-5 bg-border mx-0.5" />
-
-        {/* Desktop Secondary Tools */}
-        <button
-          type="button"
-          onClick={onOpenAvatarCustomizer}
-          aria-label="Customize avatar and status"
-          title="Customize Avatar & Status"
-          className="hidden md:flex w-10 h-10 rounded-full items-center justify-center bg-surface-2 text-text border border-border hover:border-accent transition-transform active:scale-95"
-        >
-          <IconPalette />
-        </button>
-
-        <button
-          type="button"
-          onClick={onOpenMeetingSchedule}
-          aria-label="Office schedule and room bookings"
-          title="Office Schedule & Room Bookings"
-          className="hidden md:flex w-10 h-10 rounded-full items-center justify-center bg-surface-2 text-text border border-border hover:border-accent transition-transform active:scale-95"
-        >
-          <IconCalendar />
-        </button>
-
-        <button
-          type="button"
-          onClick={onOpenPulse}
-          aria-label="Live office pulse and telemetry"
-          title="Live Office Pulse & WebRTC Telemetry"
-          className="hidden md:flex w-10 h-10 rounded-full items-center justify-center bg-surface-2 text-text border border-border hover:border-accent transition-transform active:scale-95"
-        >
-          <IconChart />
-        </button>
-
-        <button
-          type="button"
-          onClick={onToggleVideoLayout}
-          aria-label={`Switch to ${videoLayout === "floating" ? "docked" : "floating"} video layout`}
-          title={`Switch to ${videoLayout === "floating" ? "Docked" : "Floating"} Video`}
-          className="hidden md:flex w-10 h-10 rounded-full items-center justify-center bg-surface-2 text-text border border-border hover:border-accent transition-transform active:scale-95"
-        >
-          {videoLayout === "floating" ? <IconBubbles /> : <IconDock />}
-        </button>
-
-        {/* Lighting & UI Theme Switcher (Desktop) */}
-        <button
-          type="button"
-          onClick={onCycleTheme}
-          aria-label={`Switch office lighting theme (current: ${activeTheme.name})`}
-          title={`Theme: ${activeTheme.name} (click to switch)`}
-          className="hidden md:flex w-10 h-10 rounded-full items-center justify-center bg-surface-2 text-accent-2 border border-border hover:border-accent transition-transform active:scale-95"
-        >
-          <ThemeIcon />
-        </button>
-
-        {/* Sidebar toggle */}
-        <button
-          type="button"
-          onClick={onToggleSidebar}
-          aria-pressed={isSidebarOpen}
-          aria-label={
-            unreadChatCount > 0
-              ? `${isSidebarOpen ? "Hide" : "Show"} sidebar (${unreadChatCount} unread messages)`
-              : isSidebarOpen
-                ? "Hide sidebar"
-                : "Show sidebar"
-          }
-          title={
-            unreadChatCount > 0
-              ? `${isSidebarOpen ? "Hide" : "Show"} Sidebar (B) — ${unreadChatCount} unread`
-              : `${isSidebarOpen ? "Hide" : "Show"} Sidebar (B)`
-          }
-          className={`relative w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-transform active:scale-95 ${
-            isSidebarOpen
-              ? "bg-accent/20 text-accent border border-accent"
-              : "bg-surface-2 text-text border border-border hover:border-accent"
-          }`}
-        >
-          <IconUsers />
-          {unreadChatCount > 0 && (
-            <span className="absolute -top-1 -right-1 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-accent text-bg text-[9px] font-bold flex items-center justify-center shadow-sm border border-surface">
-              {unreadChatCount > 99 ? "99+" : unreadChatCount}
-            </span>
-          )}
-        </button>
-
-        {/* Fullscreen toggle */}
-        <button
-          type="button"
-          onClick={onToggleFullscreen}
-          aria-pressed={isFullscreen}
-          aria-label={isFullscreen ? "Exit fullscreen mode" : "Enter fullscreen mode"}
-          title={isFullscreen ? "Exit Fullscreen (F)" : "Fullscreen Mode (F)"}
-          className={`w-9 h-9 sm:w-10 sm:h-10 rounded-full flex items-center justify-center transition-transform active:scale-95 ${
-            isFullscreen
-              ? "bg-accent/20 text-accent border border-accent"
-              : "bg-surface-2 text-text border border-border hover:border-accent"
-          }`}
-        >
-          {isFullscreen ? <IconCompress /> : <IconExpand />}
-        </button>
-
-        {/* Help / Guide button (Desktop) */}
-        <button
-          type="button"
-          onClick={onOpenHelp}
-          aria-label="Controls and keyboard guide"
-          title="Controls & Keyboard Guide (?)"
-          className="hidden md:flex w-10 h-10 rounded-full items-center justify-center bg-surface-2 text-text-muted hover:text-text border border-border hover:border-accent transition-transform active:scale-95"
-        >
-          <span className="text-xs font-display font-bold">?</span>
-        </button>
-
-        {/* Mobile Overflow Menu Trigger */}
-        <button
-          type="button"
-          onClick={() => {
-            setMoreOpen((v) => !v);
-            setReactionsOpen(false);
-          }}
-          aria-expanded={moreOpen}
-          aria-label="More office tools"
-          title="More Tools"
-          className={`md:hidden w-9 h-9 rounded-full flex items-center justify-center transition-transform active:scale-95 ${
-            moreOpen
-              ? "bg-accent/20 text-accent border border-accent"
-              : "bg-surface-2 text-text-muted border border-border hover:border-accent"
-          }`}
-        >
-          <IconMore />
-        </button>
+          <button
+            type="button"
+            onClick={() => {
+              setMoreOpen((v) => !v);
+              setReactionsOpen(false);
+            }}
+            aria-expanded={moreOpen}
+            aria-label="More options"
+            title="Tools, Themes & Settings"
+            className={`min-w-[2.25rem] min-h-[2.25rem] sm:min-w-[2.375rem] sm:min-h-[2.375rem] rounded-full flex items-center justify-center transition-colors border ${
+              moreOpen
+                ? "bg-accent/20 text-accent border-accent"
+                : "bg-surface-2/80 text-text-muted hover:text-text border-border/70 hover:border-accent"
+            }`}
+          >
+            <IconMore className="w-4 h-4" />
+          </button>
+        </div>
       </div>
     </div>
   );
