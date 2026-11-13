@@ -21,7 +21,7 @@ const STATUS_PRESETS = [
   { label: "📅 In a Meeting", status: "In Meeting", icon: "📅" },
   { label: "🥪 Out for Lunch", status: "Out for Lunch", icon: "🥪" },
   { label: "💻 Reviewing Pull Requests", status: "Reviewing PRs", icon: "💻" },
-  { label: "🎮 Breakroom Arcade", status: "Arcade", icon: "🎮" },
+  { label: "📻 Lo-Fi Lounge", status: "Lo-Fi Lounge", icon: "📻" },
 ];
 
 export function DeskModal({

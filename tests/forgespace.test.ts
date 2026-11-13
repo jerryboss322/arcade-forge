@@ -23,10 +23,10 @@ describe("ForgeSpace Virtual Office", () => {
     expect(map.walls[10 * 40 + 10]).toBe(false);
 
     // Interactive objects
-    const arcadeCabinet = map.objects.find((o) => o.kind === "arcade");
-    expect(arcadeCabinet).toBeDefined();
-    expect(arcadeCabinet?.x).toBe(20);
-    expect(arcadeCabinet?.y).toBe(19);
+    const lofiRadio = map.objects.find((o) => o.kind === "radio");
+    expect(lofiRadio).toBeDefined();
+    expect(lofiRadio?.x).toBe(20);
+    expect(lofiRadio?.y).toBe(19);
 
     const desks = map.objects.filter((o) => o.kind === "desk");
     expect(desks.length).toBe(12);

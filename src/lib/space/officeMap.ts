@@ -16,7 +16,7 @@ export interface SpaceZone {
 
 export interface InteractiveObject {
   id: string;
-  kind: "arcade" | "desk" | "coffee" | "whiteboard" | "watercooler" | "screen";
+  kind: "radio" | "desk" | "coffee" | "whiteboard" | "watercooler" | "screen";
   name: string;
   x: number;
   y: number;
@@ -78,9 +78,9 @@ export const OFFICE_ZONES: SpaceZone[] = [
     isPrivate: true,
   },
   {
-    id: "lounge_arcade",
-    name: "Breakroom & Arcade Lounge",
-    description: "Grab espresso, chat, or play retro games at the arcade cabinet!",
+    id: "lounge_breakroom",
+    name: "Lo-Fi Lounge & Cafe",
+    description: "Grab espresso, relax to lo-fi beats, or have casual conversations.",
     color: "#FFC53D",
     x1: 16,
     y1: 18,
@@ -91,14 +91,14 @@ export const OFFICE_ZONES: SpaceZone[] = [
 ];
 
 export const OFFICE_OBJECTS: InteractiveObject[] = [
-  // Arcade Machine
+  // Lo-Fi Lounge Radio
   {
-    id: "obj_arcade",
-    kind: "arcade",
-    name: "ArcadeForge Retro Cabinet",
+    id: "obj_radio",
+    kind: "radio",
+    name: "Lo-Fi Focus Radio",
     x: 20,
     y: 19,
-    data: { featuredGame: "dungeon-crawler", title: "ArcadeForge Mini-Games" },
+    data: { currentTrack: "chill-study", title: "Lo-Fi Focus Radio" },
   },
   // Espresso machine
   {
@@ -216,7 +216,7 @@ export function createDefaultOfficeMap(): OfficeTilemap {
     let tileId = 1;
     if (zone.id === "conf_boardroom") tileId = 3;
     else if (zone.id === "conf_huddle") tileId = 4;
-    else if (zone.id === "lounge_arcade") tileId = 5;
+    else if (zone.id === "lounge_breakroom") tileId = 5;
     else if (zone.id === "reception") tileId = 2;
 
     for (let r = zone.y1; r <= zone.y2; r++) {
@@ -264,7 +264,7 @@ export function createDefaultOfficeMap(): OfficeTilemap {
   // 5. Place Interactive Objects & Furniture into Collision Map
   for (const obj of OFFICE_OBJECTS) {
     let t = 9;
-    if (obj.kind === "arcade") t = 13;
+    if (obj.kind === "radio") t = 13;
     else if (obj.kind === "coffee") t = 14;
     else if (obj.kind === "watercooler") t = 15;
     else if (obj.kind === "whiteboard") t = 16;

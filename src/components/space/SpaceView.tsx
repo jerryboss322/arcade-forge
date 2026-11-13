@@ -20,7 +20,7 @@ import { SpaceControls } from "@/components/space/SpaceControls";
 import { SpaceSidebar } from "@/components/space/SpaceSidebar";
 import { FloatingVideoBubbles } from "@/components/space/FloatingVideoBubbles";
 import { VideoDock } from "@/components/space/VideoDock";
-import { ArcadeModal } from "@/components/space/ArcadeModal";
+import { LoungeRadioModal } from "@/components/space/LoungeRadioModal";
 import { DeskModal } from "@/components/space/DeskModal";
 import { WhiteboardModal } from "@/components/space/WhiteboardModal";
 import { ArcadeDialog } from "@/components/ui/ArcadeDialog";
@@ -33,11 +33,11 @@ interface SpaceViewProps {
 }
 
 const WATERCOOLER_PROMPTS = [
-  "Did you know ArcadeForge games run at locked 60Hz inside our breakroom?",
-  "Coffee machine fact: Caffeine blocks adenosine receptors to keep you alert!",
-  "Hot take: Tabs vs Spaces? Real pixel artists use 16x16 tile offsets.",
+  "Did you know ForgeSpace uses browser P2P WebRTC so there is $0 server bandwidth bill?",
+  "Coffee machine fact: Caffeine blocks adenosine receptors to keep you focused!",
+  "Hot take: Tabs vs Spaces? Real remote teams use 16x16 tile offsets.",
   "Quick stretch: Roll your shoulders back and take a deep breath!",
-  "Fun office poll: What was the first retro arcade game you ever played?",
+  "Fun office poll: What lo-fi station are you playing in the lounge today?",
 ];
 
 export function SpaceView({
@@ -87,7 +87,7 @@ export function SpaceView({
   const [activeDesk, setActiveDesk] = useState<InteractiveObject | null>(null);
 
   // Modals
-  const [arcadeModalOpen, setArcadeModalOpen] = useState(false);
+  const [radioModalOpen, setRadioModalOpen] = useState(false);
   const [deskModalOpen, setDeskModalOpen] = useState(false);
   const [whiteboardModalOpen, setWhiteboardModalOpen] = useState(false);
   const [watercoolerModalOpen, setWatercoolerModalOpen] = useState(false);
@@ -261,8 +261,8 @@ export function SpaceView({
   const handleInteract = useCallback(
     (obj: InteractiveObject) => {
       switch (obj.kind) {
-        case "arcade":
-          setArcadeModalOpen(true);
+        case "radio":
+          setRadioModalOpen(true);
           break;
         case "desk":
           setActiveDesk(obj);
@@ -469,9 +469,9 @@ export function SpaceView({
       />
 
       {/* Interactive Modals */}
-      <ArcadeModal
-        open={arcadeModalOpen}
-        onClose={() => setArcadeModalOpen(false)}
+      <LoungeRadioModal
+        open={radioModalOpen}
+        onClose={() => setRadioModalOpen(false)}
       />
 
       <DeskModal
@@ -540,9 +540,10 @@ export function SpaceView({
           <div className="p-2.5 bg-surface-2 rounded-control space-y-1">
             <span className="font-display font-bold text-accent">Interactive Objects:</span>
             <ul className="list-disc pl-4 space-y-0.5 text-text-muted">
-              <li>Press <b className="text-text">E</b> at the Arcade Cabinet to play 60Hz games.</li>
+              <li>Press <b className="text-text">E</b> at the Lo-Fi Radio to play ambient focus beats.</li>
               <li>Press <b className="text-text">E</b> at an empty desk to claim your seat and set your status.</li>
               <li>Press <b className="text-text">E</b> at the Whiteboard to sketch or take notes.</li>
+              <li>Press <b className="text-text">E</b> at the Espresso Bar for a 20s speed boost.</li>
             </ul>
           </div>
         </div>

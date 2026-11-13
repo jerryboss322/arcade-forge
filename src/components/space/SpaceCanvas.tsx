@@ -371,7 +371,7 @@ export function SpaceCanvas({
               E
             </span>
             <span className="text-text font-display text-sm tracking-wide">
-              {nearbyObject.kind === "arcade" && "Play ArcadeForge Games"}
+              {nearbyObject.kind === "radio" && "Tune Lo-Fi Radio"}
               {nearbyObject.kind === "coffee" && "Brew Boost Espresso"}
               {nearbyObject.kind === "desk" && `Claim ${nearbyObject.name}`}
               {nearbyObject.kind === "whiteboard" && "Open Team Whiteboard"}
@@ -512,18 +512,18 @@ function drawObjects(
     const oy = obj.y * 16;
     const isClosest = closest?.id === obj.id;
 
-    if (obj.kind === "arcade") {
-      // Retro Arcade Machine
-      ctx.fillStyle = "#FF0055";
-      ctx.fillRect(ox + 1, oy, 14, 16);
-      // Screen marquee
+    if (obj.kind === "radio") {
+      // Vintage Lo-Fi Radio
+      ctx.fillStyle = "#8B5A2B";
+      ctx.fillRect(ox + 1, oy + 2, 14, 14);
+      // Radio speaker grill
+      ctx.fillStyle = "#5C3A1E";
+      ctx.fillRect(ox + 3, oy + 5, 10, 6);
+      // Dial & music wave
       ctx.fillStyle = (tick % 20 < 10) ? "#37E6C4" : "#FFC53D";
-      ctx.fillRect(ox + 3, oy + 2, 10, 6);
-      // Joystick + button
+      ctx.fillRect(ox + 4, oy + 12, 3, 2);
       ctx.fillStyle = "#EDEEFF";
-      ctx.fillRect(ox + 5, oy + 10, 2, 2);
-      ctx.fillStyle = "#FF0055";
-      ctx.fillRect(ox + 9, oy + 10, 2, 2);
+      ctx.fillRect(ox + 10, oy + 1, 1, 3);
     } else if (obj.kind === "coffee") {
       // Espresso machine
       ctx.fillStyle = "#FF7A00";
