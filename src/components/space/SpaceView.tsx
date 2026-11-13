@@ -112,6 +112,104 @@ export function SpaceView({
   const [coffeeBoostNotice, setCoffeeBoostNotice] = useState(false);
   const [inviteCopied, setInviteCopied] = useState(false);
 
+  // Fullscreen state (supports native Fullscreen API with CSS immersive fallback)
+  const spaceContainerRef = useRef<HTMLDivElement | null>(null);
+  const [isNativeFullscreen, setIsNativeFullscreen] = useState(false);
+  const [isImmersiveFallback, setIsImmersiveFallback] = useState(false);
+  const isFullscreen = isNativeFullscreen || isImmersiveFallback;
+
+  useEffect(() => {
+    const syncFullscreenState = () => {
+      const doc = document as Document & { webkitFullscreenElement?: Element | null };
+      const fsEl = doc.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
+      const active = Boolean(fsEl);
+      setIsNativeFullscreen(active);
+      if (!active) {
+        // Keep fallback off once native fullscreen ends via Esc or browser UI
+        setIsImmersiveFallback(false);
+      }
+    };
+
+    document.addEventListener("fullscreenchange", syncFullscreenState);
+    document.addEventListener("webkitfullscreenchange", syncFullscreenState);
+    return () => {
+      document.removeEventListener("fullscreenchange", syncFullscreenState);
+      document.removeEventListener("webkitfullscreenchange", syncFullscreenState);
+    };
+  }, []);
+
+  const handleToggleFullscreen = useCallback(async () => {
+    const doc = document as Document & {
+      webkitFullscreenElement?: Element | null;
+      webkitExitFullscreen?: () => Promise<void> | void;
+    };
+    const fsEl = doc.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
+
+    if (fsEl) {
+      try {
+        if (document.exitFullscreen) {
+          await document.exitFullscreen();
+        } else if (doc.webkitExitFullscreen) {
+          await doc.webkitExitFullscreen();
+        }
+      } catch {
+        setIsNativeFullscreen(false);
+      }
+      setIsImmersiveFallback(false);
+      return;
+    }
+
+    if (isImmersiveFallback) {
+      setIsImmersiveFallback(false);
+      return;
+    }
+
+    const container = spaceContainerRef.current as
+      | (HTMLDivElement & { webkitRequestFullscreen?: () => Promise<void> | void })
+      | null;
+    if (!container) return;
+
+    try {
+      if (container.requestFullscreen) {
+        await container.requestFullscreen();
+        return;
+      }
+      if (container.webkitRequestFullscreen) {
+        await container.webkitRequestFullscreen();
+        return;
+      }
+    } catch {
+      // Fallback to viewport-locked immersive mode when browser blocks native fullscreen
+    }
+    setIsImmersiveFallback(true);
+  }, [isImmersiveFallback]);
+
+  // Global keyboard shortcut: F toggles fullscreen, Esc exits CSS fallback
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+
+      if (e.code === "KeyF") {
+        e.preventDefault();
+        void handleToggleFullscreen();
+      } else if (e.code === "Escape" && isImmersiveFallback && !document.querySelector("dialog[open]")) {
+        setIsImmersiveFallback(false);
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [handleToggleFullscreen, isImmersiveFallback]);
+
   // Stable refs to prevent tearing down WebRTC/Signaling on avatar movement
   const signalingRef = useRef<SpaceSignaling | null>(null);
   const webrtcRef = useRef<WebRTCMeshManager | null>(null);
@@ -521,7 +619,14 @@ export function SpaceView({
   const activePresenterStream = activePresenter ? streamsMap[activePresenter.id] || webrtcRef.current?.getLocalStream() || null : null;
 
   return (
-    <div className="relative w-full h-[calc(100vh-3.5rem)] md:h-[calc(100vh-4rem)] flex overflow-hidden bg-bg">
+    <div
+      ref={spaceContainerRef}
+      className={
+        isFullscreen
+          ? "fixed inset-0 z-50 w-screen h-dvh flex overflow-hidden bg-bg"
+          : "relative w-full h-[calc(100vh-3.5rem)] md:h-[calc(100vh-4rem)] flex overflow-hidden bg-bg"
+      }
+    >
       {/* Center Floor Area (3D or 2D) */}
       <div className="relative flex-1 h-full flex flex-col min-w-0">
         {/* Top Header Information Bar */}
@@ -550,6 +655,20 @@ export function SpaceView({
               className="px-2.5 py-1 text-xs bg-surface-2 hover:bg-surface border border-border text-accent rounded-control flex items-center gap-1"
             >
               <span>{inviteCopied ? "✓ Link Copied" : "🔗 Invite"}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleToggleFullscreen()}
+              aria-pressed={isFullscreen}
+              title={isFullscreen ? "Exit Fullscreen (F)" : "Enter Fullscreen (F)"}
+              className={`px-2.5 py-1 text-xs border rounded-control flex items-center gap-1.5 font-display font-semibold transition-colors ${
+                isFullscreen
+                  ? "bg-accent/20 border-accent text-accent hover:bg-accent/30"
+                  : "bg-surface-2 hover:bg-surface border-border text-text hover:border-accent"
+              }`}
+            >
+              <span>{isFullscreen ? "✕" : "⛶"}</span>
+              <span className="hidden sm:inline">{isFullscreen ? "Exit Fullscreen" : "Fullscreen"}</span>
             </button>
             <span className="text-xs text-text-muted font-mono hidden sm:inline">
               {remotePeers.length + 1} online
@@ -643,12 +762,14 @@ export function SpaceView({
               isVideoMuted={!localPeer.media.video}
               isScreenSharing={localPeer.media.screen}
               isSidebarOpen={isSidebarOpen}
+              isFullscreen={isFullscreen}
               videoLayout={videoLayout}
               viewMode={viewMode}
               onToggleAudio={handleToggleAudio}
               onToggleVideo={handleToggleVideo}
               onToggleScreenShare={handleToggleScreenShare}
               onToggleSidebar={() => setIsSidebarOpen((v) => !v)}
+              onToggleFullscreen={() => void handleToggleFullscreen()}
               onToggleVideoLayout={() =>
                 setVideoLayout((l) => (l === "floating" ? "docked" : "floating"))
               }
@@ -796,6 +917,7 @@ export function SpaceView({
             <ul className="list-disc pl-4 space-y-0.5 text-text-muted">
               <li>Toggle between <b className="text-text">🧊 3D WebGL</b> and <b className="text-text">🗺️ 2D Classic</b> views using the button in the bottom controls bar.</li>
               <li><b className="text-text">WASD / Arrow Keys</b>: Walk smoothly across all rooms.</li>
+              <li><b className="text-text">F</b> or the <b className="text-text">Fullscreen</b> button: Expand into immersive fullscreen mode (<b className="text-text">Esc</b> to exit).</li>
               <li><b className="text-text">Click / Tap Anywhere</b>: Raycasted BFS pathfinding navigates around desks and walls.</li>
             </ul>
           </div>
