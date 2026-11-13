@@ -26,7 +26,7 @@ const FEATURED_SPACES: SpaceCard[] = [
     zones: ["Boardroom", "War Room", "12 Desks", "Cafe Lounge"],
   },
   {
-    slug: "indie-forge",
+    slug: "indie-studio",
     name: "Indie Dev Studio",
     tagline: "Creative team floor with Lo-Fi lounge, collaborative whiteboard and sprint war room.",
     tag: "Design & Product Studio",
@@ -54,36 +54,48 @@ const FEATURED_SPACES: SpaceCard[] = [
   },
 ];
 
-const OFFICE_USE_CASES = [
+const OFFICE_FEATURE_TEASERS = [
   {
-    title: "Daily Standups & Demos",
-    icon: "🚀",
-    description: "Gather around the Boardroom Presentation Screen for quick 15-minute daily syncs. Share slides or code with 1-click Theater Mode.",
+    icon: "🧊",
+    title: "3D Isometric WebGL Canvas",
+    description: "Walk smoothly across your company floor with procedural 3D furniture, customizable avatars, and raycasted pathfinding.",
+    href: "/features",
+    badge: "Interactive 3D",
   },
   {
-    title: "Deep Work & Focus Blocks",
-    icon: "🎧",
-    description: "Sit at your personal workstation and set your status to 'Deep Focus'. Coworkers see your status and know not to interrupt your flow.",
+    icon: "🎙️",
+    title: "Zero-Cost Spatial Audio",
+    description: "Proximity WebRTC rolls off audio naturally over distance. No zoom fatigue, no constant muting/unmuting.",
+    href: "/features",
+    badge: "WebRTC Mesh",
   },
   {
-    title: "Soundproof 1-on-1s",
     icon: "🔒",
-    description: "Walk into the Glass Boardroom and close the virtual door. Audio is 100% isolated so you can discuss confidential roadmap or review items.",
+    title: "Soundproof Glass Meeting Rooms",
+    description: "Step into the Boardroom or War Room for instant confidential audio isolation and coworker door-knocking.",
+    href: "/features",
+    badge: "Private Rooms",
   },
   {
-    title: "Spontaneous Hallway Chit-Chat",
-    icon: "☕",
-    description: "Bump into coworkers by the espresso bar or watercooler. Spatial proximity audio connects smoothly when you walk near each other.",
-  },
-  {
-    title: "Real-Time Brainstorming",
     icon: "📋",
-    description: "Gather around the War Room Whiteboard to sketch system architectures, map out user journeys, or draft sprint action items together.",
+    title: "War Room Whiteboards & Stickies",
+    description: "Brainstorm sprints, sketch architecture diagrams, and manage tasks with sticky notes and PNG snapshot exports.",
+    href: "/whiteboard",
+    badge: "Standalone App",
   },
   {
-    title: "Zero Battery Drain & Runs in Browser",
-    icon: "⚡",
-    description: "No bulky 800 MB Electron download. Runs at a locked 60 FPS in Chrome, Safari, or Firefox with minimal CPU and battery usage.",
+    icon: "📅",
+    title: "Office Sync Calendar & Agendas",
+    description: "Book meeting rooms, view daily team standups, and warp coworkers directly to room locations.",
+    href: "/schedule",
+    badge: "Team Bookings",
+  },
+  {
+    icon: "📊",
+    title: "Truthful Telemetry & Pulse",
+    description: "Verify actual floor presence, peer latency, and calculate your team's cloud savings over Gather or Zoom.",
+    href: "/pulse",
+    badge: "Real Telemetry",
   },
 ];
 
@@ -115,20 +127,15 @@ export default function HomePage() {
       {/* Hero Header Section */}
       <section className="relative rounded-container overflow-hidden border-2 border-border bg-gradient-to-br from-surface to-surface-2 p-6 md:p-12 shadow-arcade">
         <div className="max-w-3xl space-y-5">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-accent/15 border border-accent/40 text-accent font-display text-xs font-semibold">
-            <span className="w-2 h-2 rounded-full bg-accent animate-ping" />
-            FORGESPACE • VIRTUAL OFFICE FOR REMOTE TEAMS
-          </div>
-
           <h1 className="font-display text-3xl md:text-5xl lg:text-6xl font-extrabold text-text tracking-tight uppercase leading-tight">
             Your Team&apos;s Virtual Office <br />
             <span className="text-accent">With $0 Server Overhead</span>
           </h1>
 
           <p className="text-text-muted text-base md:text-lg leading-relaxed max-w-2xl">
-            Bring back the energy of working side-by-side. 
-            Features <b>P2P WebRTC spatial proximity audio</b>, soundproof glass conference rooms, 
-            claimable desks with status badges, and collaborative whiteboards — right in your browser.
+            Bring back the spontaneous energy of working side-by-side. 
+            Features <b>3D Isometric WebGL floors</b>, <b>P2P WebRTC spatial audio</b>, soundproof glass conference rooms, 
+            claimable desks with status badges, and collaborative sprint whiteboards — right in your browser.
           </p>
 
           <div className="flex flex-wrap items-center gap-4 pt-2">
@@ -142,12 +149,12 @@ export default function HomePage() {
               href="/space/acme-hq"
               className="px-7 py-3.5 bg-surface-2 hover:bg-surface border-2 border-border text-text font-display font-semibold text-sm md:text-base rounded-control shadow-sm transition-all flex items-center gap-2"
             >
-              <span>Enter Demo Floor (Acme HQ)</span>
+              <span>Enter 3D Demo Floor</span>
               <span className="text-accent">→</span>
             </Link>
           </div>
 
-          {/* Quick Stat Pill Highlights */}
+          {/* Quick Stats Pill Highlights */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-6 border-t border-border/80">
             <div>
               <span className="font-display font-bold text-lg md:text-xl text-text block">
@@ -162,7 +169,7 @@ export default function HomePage() {
                 60 FPS
               </span>
               <span className="text-xs text-text-muted font-sans">
-                Pure Canvas & Zero Lag
+                WebGL 3D & 2D Canvas
               </span>
             </div>
             <div>
@@ -170,7 +177,7 @@ export default function HomePage() {
                 Soundproof
               </span>
               <span className="text-xs text-text-muted font-sans">
-                Private Meeting Rooms
+                Private Meeting Pods
               </span>
             </div>
             <div>
@@ -185,7 +192,7 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* Featured Spaces Showcase */}
+      {/* Featured Spaces Showcase with Link to /spaces */}
       <section className="space-y-6">
         <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
           <div>
@@ -196,12 +203,13 @@ export default function HomePage() {
               Choose a pre-configured floor plan or launch an instant virtual room for your team.
             </p>
           </div>
-          <button
-            onClick={() => setCreateModalOpen(true)}
-            className="text-xs font-display font-semibold text-accent hover:underline self-start sm:self-auto"
+          <Link
+            href="/spaces"
+            className="text-xs font-display font-bold text-accent hover:underline flex items-center gap-1 self-start sm:self-auto"
           >
-            + Create Custom Space
-          </button>
+            <span>View All Floorplans</span>
+            <span>→</span>
+          </Link>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -254,44 +262,75 @@ export default function HomePage() {
         </div>
       </section>
 
-      {/* How Teams Use ForgeSpace */}
+      {/* Multi-Page Feature Hub Cards */}
       <section className="space-y-6">
-        <div>
-          <h2 className="font-display text-xl md:text-2xl font-bold text-text uppercase tracking-wide">
-            Designed for Modern Remote Culture
-          </h2>
-          <p className="text-xs md:text-sm text-text-muted">
-            The simplicity of physical presence combined with the flexibility of remote work.
-          </p>
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+          <div>
+            <h2 className="font-display text-xl md:text-2xl font-bold text-text uppercase tracking-wide">
+              Virtual Office Platform Capabilities
+            </h2>
+            <p className="text-xs md:text-sm text-text-muted">
+              Explore dedicated features and tools built specifically for remote team cohesion.
+            </p>
+          </div>
+          <Link
+            href="/features"
+            className="text-xs font-display font-bold text-accent hover:underline flex items-center gap-1 self-start sm:self-auto"
+          >
+            <span>Read Complete Feature Specs</span>
+            <span>→</span>
+          </Link>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-          {OFFICE_USE_CASES.map((uc) => (
-            <div
-              key={uc.title}
-              className="p-6 rounded-container bg-surface border-2 border-border space-y-2 hover:border-border/80 transition-colors"
+          {OFFICE_FEATURE_TEASERS.map((feat) => (
+            <Link
+              key={feat.title}
+              href={feat.href}
+              className="p-6 rounded-container bg-surface border-2 border-border hover:border-accent shadow-arcade hover:-translate-y-1 transition-all flex flex-col justify-between group"
             >
-              <span className="text-3xl block mb-1">{uc.icon}</span>
-              <h3 className="font-display text-base font-bold text-text">
-                {uc.title}
-              </h3>
-              <p className="text-xs text-text-muted leading-relaxed">
-                {uc.description}
-              </p>
-            </div>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-3xl">{feat.icon}</span>
+                  <span className="px-2.5 py-0.5 rounded text-[10px] font-mono bg-accent/15 text-accent border border-accent/30 font-semibold">
+                    {feat.badge}
+                  </span>
+                </div>
+                <h3 className="font-display text-base font-bold text-text group-hover:text-accent transition-colors">
+                  {feat.title}
+                </h3>
+                <p className="text-xs text-text-muted leading-relaxed">
+                  {feat.description}
+                </p>
+              </div>
+
+              <div className="pt-4 mt-2 border-t border-border/60 flex items-center justify-between text-xs font-display font-bold text-accent">
+                <span>Explore Page</span>
+                <span className="group-hover:translate-x-1 transition-transform">→</span>
+              </div>
+            </Link>
           ))}
         </div>
       </section>
 
-      {/* Why ForgeSpace vs Gather.town Comparison Table */}
-      <section id="pricing" className="rounded-container border-2 border-border bg-surface p-6 md:p-8 space-y-6">
-        <div className="max-w-xl">
-          <h2 className="font-display text-xl font-bold text-text uppercase tracking-wide">
-            Compare: Gather.town vs ForgeSpace
-          </h2>
-          <p className="text-xs text-text-muted">
-            Why high-velocity remote teams choose lightweight P2P over heavy commercial tools.
-          </p>
+      {/* Compare Gather vs ForgeSpace Teaser with Link to /pricing */}
+      <section className="rounded-container border-2 border-border bg-surface p-6 md:p-8 space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="max-w-xl">
+            <h2 className="font-display text-xl font-bold text-text uppercase tracking-wide">
+              Compare: Gather.town vs ForgeSpace
+            </h2>
+            <p className="text-xs text-text-muted mt-1">
+              Why remote engineering teams are switching from high-cost commercial tools to our lightweight P2P architecture.
+            </p>
+          </div>
+          <Link
+            href="/pricing"
+            className="px-5 py-2.5 bg-accent text-bg font-display font-bold text-xs rounded-control hover:brightness-110 shadow-sm flex items-center gap-1.5 flex-shrink-0 self-start sm:self-auto"
+          >
+            <span>Full Pricing & Cost Comparison</span>
+            <span>→</span>
+          </Link>
         </div>
 
         <div className="overflow-x-auto">
@@ -301,7 +340,7 @@ export default function HomePage() {
                 <th className="py-3 px-4">Feature</th>
                 <th className="py-3 px-4 text-accent font-bold">ForgeSpace</th>
                 <th className="py-3 px-4">Gather.town</th>
-                <th className="py-3 px-4">Slack Huddles / Zoom</th>
+                <th className="py-3 px-4">Zoom / Slack</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/60 text-text">
@@ -312,34 +351,22 @@ export default function HomePage() {
                 <td className="py-3 px-4 text-text-muted">Subscription</td>
               </tr>
               <tr>
+                <td className="py-3 px-4 font-semibold">3D & 2D Canvas Engine</td>
+                <td className="py-3 px-4 text-emerald-400 font-bold">Yes (WebGL Isometric + 2D)</td>
+                <td className="py-3 px-4">2D Sprite only</td>
+                <td className="py-3 px-4 text-text-muted">No (Flat Video Grid)</td>
+              </tr>
+              <tr>
                 <td className="py-3 px-4 font-semibold">Spatial Audio & Stereo Panning</td>
                 <td className="py-3 px-4 text-emerald-400 font-bold">Yes (Web Audio API)</td>
                 <td className="py-3 px-4">Yes</td>
-                <td className="py-3 px-4 text-text-muted">No (Flat Audio)</td>
+                <td className="py-3 px-4 text-text-muted">No</td>
               </tr>
               <tr>
                 <td className="py-3 px-4 font-semibold">Soundproof Private Rooms</td>
-                <td className="py-3 px-4 text-emerald-400 font-bold">Yes (Audio Isolation)</td>
+                <td className="py-3 px-4 text-emerald-400 font-bold">Yes (Glass Boardrooms)</td>
                 <td className="py-3 px-4">Yes</td>
-                <td className="py-3 px-4 text-text-muted">Requires Separate Calls</td>
-              </tr>
-              <tr>
-                <td className="py-3 px-4 font-semibold">Claimable Desks & Statuses</td>
-                <td className="py-3 px-4 text-emerald-400 font-bold">Yes (In-Floor Badges)</td>
-                <td className="py-3 px-4">Yes</td>
-                <td className="py-3 px-4 text-text-muted">Text status only</td>
-              </tr>
-              <tr>
-                <td className="py-3 px-4 font-semibold">Client Performance & Battery</td>
-                <td className="py-3 px-4 text-emerald-400 font-bold">Pure Canvas 60 FPS (Ultra Light)</td>
-                <td className="py-3 px-4 text-red-400">High CPU & Battery Drain</td>
-                <td className="py-3 px-4 text-text-muted">Medium</td>
-              </tr>
-              <tr>
-                <td className="py-3 px-4 font-semibold">Lo-Fi Cafe Radio & Espresso</td>
-                <td className="py-3 px-4 text-emerald-400 font-bold">Yes (Built-in Audio Synth)</td>
-                <td className="py-3 px-4 text-text-muted">No</td>
-                <td className="py-3 px-4 text-text-muted">No</td>
+                <td className="py-3 px-4 text-text-muted">Requires Separate Call</td>
               </tr>
             </tbody>
           </table>
