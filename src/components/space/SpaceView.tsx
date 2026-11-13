@@ -84,9 +84,6 @@ export function SpaceView({
   const [remotePeers, setRemotePeers] = useState<PeerState[]>([]);
   const [streamsMap, setStreamsMap] = useState<Record<string, MediaStream>>({});
   const [speakingMap, setSpeakingMap] = useState<Record<string, boolean>>({});
-  const [screenPositions, setScreenPositions] = useState<
-    Record<string, { screenX: number; screenY: number; inView: boolean }>
-  >({});
   const [chatMessages, setChatMessages] = useState<
     Array<{ id: string; sender: string; text: string; time: string; zoneId?: string }>
   >([]);
@@ -115,28 +112,43 @@ export function SpaceView({
   const [coffeeBoostNotice, setCoffeeBoostNotice] = useState(false);
   const [inviteCopied, setInviteCopied] = useState(false);
 
-  // References
+  // Stable refs to prevent tearing down WebRTC/Signaling on avatar movement
   const signalingRef = useRef<SpaceSignaling | null>(null);
   const webrtcRef = useRef<WebRTCMeshManager | null>(null);
+  const localPeerRef = useRef<PeerState>(localPeer);
+  localPeerRef.current = localPeer;
+  const remotePeersRef = useRef<PeerState[]>(remotePeers);
+  remotePeersRef.current = remotePeers;
 
-  // Handle Incoming Signaling Messages
+  // Handle Incoming Signaling Messages (stable callback)
   const handleSignalMessage = useCallback(
     (msg: SignalMessage) => {
+      const myPeer = localPeerRef.current;
+
       switch (msg.type) {
         case "peer_join":
-          if (msg.peer.id !== localPeer.id) {
+          if (msg.peer.id !== myPeer.id) {
+            const alreadyKnown = remotePeersRef.current.some((p) => p.id === msg.peer.id);
             setRemotePeers((prev) => {
-              const existing = prev.filter((p) => p.id !== msg.peer.id);
-              return [...existing, msg.peer];
+              const idx = prev.findIndex((p) => p.id === msg.peer.id);
+              if (idx === -1) {
+                return [...prev, { ...msg.peer, updatedAt: Date.now() }];
+              }
+              const next = [...prev];
+              next[idx] = { ...msg.peer, updatedAt: Date.now() };
+              return next;
             });
-            officeAudio.playPeerJoinNotification();
-            // Connect WebRTC peer as initiator
-            webrtcRef.current?.connectToPeer(msg.peer.id, true);
+
+            if (!alreadyKnown) {
+              officeAudio.playPeerJoinNotification();
+              // Connect WebRTC peer as initiator only on initial discovery
+              webrtcRef.current?.connectToPeer(msg.peer.id, true);
+            }
           }
           break;
 
         case "peer_move":
-          if (msg.id !== localPeer.id) {
+          if (msg.id !== myPeer.id) {
             setRemotePeers((prev) =>
               prev.map((p) =>
                 p.id === msg.id
@@ -154,12 +166,12 @@ export function SpaceView({
             );
 
             // Update spatial audio attenuation
-            const localZone = getZoneAt(localPeer.x, localPeer.y, map.zones);
+            const localZone = getZoneAt(myPeer.x, myPeer.y, map.zones);
             const peerZone = getZoneAt(msg.x, msg.y, map.zones);
             webrtcRef.current?.updateSpatialDistance(
               msg.id,
-              localPeer.x,
-              localPeer.y,
+              myPeer.x,
+              myPeer.y,
               msg.x,
               msg.y,
               localZone,
@@ -174,13 +186,14 @@ export function SpaceView({
           break;
 
         case "peer_media":
-          if (msg.id !== localPeer.id) {
+          if (msg.id !== myPeer.id) {
             setRemotePeers((prev) =>
               prev.map((p) =>
                 p.id === msg.id
                   ? {
                       ...p,
                       media: { ...p.media, ...msg.media },
+                      updatedAt: Date.now(),
                     }
                   : p
               )
@@ -189,7 +202,7 @@ export function SpaceView({
           break;
 
         case "peer_status":
-          if (msg.id !== localPeer.id) {
+          if (msg.id !== myPeer.id) {
             setRemotePeers((prev) =>
               prev.map((p) =>
                 p.id === msg.id
@@ -197,6 +210,9 @@ export function SpaceView({
                       ...p,
                       status: msg.status,
                       deskClaimed: msg.deskClaimed,
+                      name: msg.name ?? p.name,
+                      avatarColor: msg.avatarColor ?? p.avatarColor,
+                      updatedAt: Date.now(),
                     }
                   : p
               )
@@ -206,7 +222,7 @@ export function SpaceView({
 
         case "chat":
           setChatMessages((prev) => [
-            ...prev,
+            ...prev.slice(-99),
             {
               id: msg.id,
               sender: msg.sender,
@@ -218,16 +234,16 @@ export function SpaceView({
           break;
 
         case "webrtc_signal":
-          if (msg.to === localPeer.id) {
+          if (msg.to === myPeer.id) {
             webrtcRef.current?.handleSignal(msg.from, msg.payload);
           }
           break;
       }
     },
-    [localPeer.id, localPeer.x, localPeer.y, map.zones]
+    [map.zones]
   );
 
-  // Initialize WebRTC and Signaling
+  // Initialize WebRTC and Signaling ONCE per spaceSlug & localPeer.id
   useEffect(() => {
     // 1. Initialize WebRTC mesh manager
     const webrtc = new WebRTCMeshManager(
@@ -241,12 +257,18 @@ export function SpaceView({
         }
       },
       (peerId: string, isSpeaking: boolean) => {
-        setSpeakingMap((prev) => ({ ...prev, [peerId]: isSpeaking }));
+        setSpeakingMap((prev) => {
+          if (prev[peerId] === isSpeaking) return prev;
+          return { ...prev, [peerId]: isSpeaking };
+        });
         if (peerId === "local") {
-          setLocalPeer((prev) => ({
-            ...prev,
-            media: { ...prev.media, speaking: isSpeaking },
-          }));
+          setLocalPeer((prev) => {
+            if (prev.media.speaking === isSpeaking) return prev;
+            return {
+              ...prev,
+              media: { ...prev.media, speaking: isSpeaking },
+            };
+          });
         }
       }
     );
@@ -257,26 +279,53 @@ export function SpaceView({
     });
 
     // 2. Initialize Signaling Channel
-    const signaling = new SpaceSignaling(spaceSlug, localPeer, handleSignalMessage);
+    const signaling = new SpaceSignaling(spaceSlug, localPeerRef.current, handleSignalMessage);
     signalingRef.current = signaling;
 
+    // 3. Periodically prune disconnected peers that missed peer_leave (> 30s without heartbeat)
+    const pruneTimer = setInterval(() => {
+      const cutoff = Date.now() - 30_000;
+      setRemotePeers((prev) => {
+        const active = prev.filter((p) => {
+          if (p.updatedAt < cutoff) {
+            webrtcRef.current?.disconnectPeer(p.id);
+            return false;
+          }
+          return true;
+        });
+        return active.length === prev.length ? prev : active;
+      });
+    }, 10_000);
+
     return () => {
+      clearInterval(pruneTimer);
       signaling.destroy();
       webrtc.destroy();
     };
   }, [spaceSlug, localPeer.id, handleSignalMessage]);
 
-  // Handle Local Movement
+  // Handle Local Movement (stable callback using remotePeersRef)
   const handleMove = useCallback(
     (x: number, y: number, dir: PeerState["dir"], isMoving: boolean, zoneId: string) => {
-      setLocalPeer((prev) => ({
-        ...prev,
-        x,
-        y,
-        dir,
-        isMoving,
-        zoneId,
-      }));
+      setLocalPeer((prev) => {
+        if (
+          prev.x === x &&
+          prev.y === y &&
+          prev.dir === dir &&
+          prev.isMoving === isMoving &&
+          prev.zoneId === zoneId
+        ) {
+          return prev;
+        }
+        return {
+          ...prev,
+          x,
+          y,
+          dir,
+          isMoving,
+          zoneId,
+        };
+      });
 
       signalingRef.current?.updatePosition(x, y, dir, isMoving, zoneId);
 
@@ -288,7 +337,9 @@ export function SpaceView({
 
       // Update distance attenuation for all remote peers
       const localZone = getZoneAt(x, y, map.zones);
-      for (const peer of remotePeers) {
+      const peers = remotePeersRef.current;
+      for (let i = 0; i < peers.length; i++) {
+        const peer = peers[i]!;
         const peerZone = getZoneAt(peer.x, peer.y, map.zones);
         webrtcRef.current?.updateSpatialDistance(
           peer.id,
@@ -301,7 +352,7 @@ export function SpaceView({
         );
       }
     },
-    [map.zones, remotePeers]
+    [map.zones]
   );
 
   // Handle Object Interactions
@@ -421,7 +472,12 @@ export function SpaceView({
         avatarColor: customization.avatarColor,
         status: customization.status,
       };
-      signalingRef.current?.updateStatus(customization.status, prev.deskClaimed);
+      signalingRef.current?.updateStatus(
+        customization.status,
+        prev.deskClaimed,
+        customization.name,
+        customization.avatarColor
+      );
       return updated;
     });
   };
@@ -550,7 +606,6 @@ export function SpaceView({
               speakingMap={speakingMap}
               onMove={handleMove}
               onInteract={handleInteract}
-              onScreenPositionUpdate={setScreenPositions}
             />
           ) : (
             <SpaceCanvas
@@ -560,7 +615,6 @@ export function SpaceView({
               speakingMap={speakingMap}
               onMove={handleMove}
               onInteract={handleInteract}
-              onScreenPositionUpdate={setScreenPositions}
             />
           )}
 
@@ -570,7 +624,6 @@ export function SpaceView({
               <FloatingVideoBubbles
                 peers={[localPeer, ...remotePeers]}
                 speakingMap={speakingMap}
-                screenPositions={screenPositions}
                 streamsMap={streamsMap}
               />
             </div>
