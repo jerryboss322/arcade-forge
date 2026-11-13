@@ -33,6 +33,11 @@ const FloatingBubble = memo(function FloatingBubble({
   onBubbleClick?: (peer: PeerState) => void;
 }) {
   const elRef = useRef<HTMLDivElement | null>(null);
+  const hasLiveVideo = Boolean(
+    stream &&
+      peer.media.video &&
+      stream.getVideoTracks().some((t) => t.readyState === "live")
+  );
 
   const applyPosition = (pos?: ScreenPosition) => {
     const el = elRef.current;
@@ -71,10 +76,10 @@ const FloatingBubble = memo(function FloatingBubble({
       ref={elRef}
       style={{ willChange: "transform, opacity" }}
       onClick={() => onBubbleClick?.(peer)}
-      className="absolute top-0 left-0 w-16 h-16 rounded-full cursor-pointer hover:scale-110 flex items-center justify-center opacity-0 pointer-events-none"
+      className="absolute top-0 left-0 w-16 flex flex-col items-center cursor-pointer hover:scale-105 opacity-0 pointer-events-none"
     >
       <div
-        className={`w-full h-full rounded-full overflow-hidden border-2 bg-surface shadow-arcade flex items-center justify-center relative ${
+        className={`w-16 h-16 rounded-full overflow-hidden border-2 bg-surface shadow-arcade flex items-center justify-center relative ${
           isSpeaking
             ? "border-[#37E6C4] ring-4 ring-[#37E6C4]/30 animate-pulse"
             : isLocal
@@ -82,7 +87,7 @@ const FloatingBubble = memo(function FloatingBubble({
               : "border-border"
         }`}
       >
-        {stream && peer.media.video ? (
+        {hasLiveVideo && stream ? (
           <PeerVideoElement stream={stream} mirror={isLocal} />
         ) : (
           <div
@@ -108,6 +113,9 @@ const FloatingBubble = memo(function FloatingBubble({
           </span>
         )}
       </div>
+      <span className="mt-1 px-1.5 py-0.5 rounded-full bg-surface/85 backdrop-blur-sm border border-border/60 text-[9px] font-display font-semibold text-text whitespace-nowrap shadow-sm">
+        {isLocal ? "You" : peer.name}
+      </span>
     </div>
   );
 });

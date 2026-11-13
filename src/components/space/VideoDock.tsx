@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect } from "react";
 import { PeerState } from "@/lib/space/signaling";
+import { IconMicOff } from "@/components/space/SpaceIcons";
 
 interface VideoDockProps {
   localPeer: PeerState;
@@ -21,60 +22,61 @@ export function VideoDock({
   const allInProximity = [localPeer, ...nearbyPeers];
 
   return (
-    <div className="w-full bg-surface-2/95 backdrop-blur-md border-t border-border px-3 py-2 flex items-center gap-3 overflow-x-auto scrollbar-none">
-      <div className="flex items-center gap-2 flex-shrink-0">
-        <span className="text-[11px] font-display text-text-muted uppercase tracking-wider">
-          Nearby ({allInProximity.length})
-        </span>
-      </div>
+    <div className="max-w-[92vw] rounded-2xl bg-surface/80 backdrop-blur-xl border border-border/75 shadow-arcade px-2.5 py-1.5 flex items-center gap-2 overflow-x-auto scrollbar-none">
+      {allInProximity.map((peer) => {
+        const isLocal = peer.id === localPeer.id;
+        const isSpeaking = !!(speakingMap[isLocal ? "local" : peer.id] || speakingMap[peer.id]);
+        const stream = streamsMap[peer.id] || (isLocal ? streamsMap["local"] : undefined);
+        const hasLiveVideo = Boolean(
+          stream &&
+            peer.media.video &&
+            stream.getVideoTracks().some((t) => t.readyState === "live")
+        );
 
-      <div className="flex items-center gap-2">
-        {allInProximity.map((peer) => {
-          const isLocal = peer.id === localPeer.id;
-          const isSpeaking = !!speakingMap[isLocal ? "local" : peer.id];
-          const stream = streamsMap[peer.id] || (isLocal ? streamsMap["local"] : undefined);
-
-          return (
+        return (
+          <button
+            key={peer.id}
+            type="button"
+            onClick={() => !isLocal && onSelectPeer?.(peer)}
+            title={isLocal ? "You" : `Walk to ${peer.name}`}
+            className="flex-shrink-0 flex flex-col items-center gap-0.5 cursor-pointer group focus:outline-none"
+          >
             <div
-              key={peer.id}
-              onClick={() => onSelectPeer?.(peer)}
-              className="flex-shrink-0 flex flex-col items-center gap-1 cursor-pointer group"
+              className={`w-11 h-11 sm:w-12 sm:h-12 rounded-xl overflow-hidden border-2 bg-bg relative flex items-center justify-center transition-transform group-hover:scale-105 ${
+                isSpeaking
+                  ? "border-[#37E6C4] ring-2 ring-[#37E6C4]/40"
+                  : isLocal
+                    ? "border-accent/80"
+                    : "border-border/80"
+              }`}
             >
-              <div
-                className={`w-12 h-12 md:w-14 md:h-14 rounded-full overflow-hidden border-2 bg-black relative flex items-center justify-center transition-transform group-hover:scale-105 ${
-                  isSpeaking
-                    ? "border-[#37E6C4] ring-2 ring-[#37E6C4]/40"
-                    : isLocal
-                    ? "border-accent"
-                    : "border-border"
-                }`}
-              >
-                {stream && peer.media.video ? (
-                  <DockVideoElement stream={stream} mirror={isLocal} />
-                ) : (
-                  <div
-                    className="w-full h-full flex items-center justify-center text-xs font-display font-bold text-white"
-                    style={{ backgroundColor: peer.avatarColor }}
-                  >
-                    {peer.name.slice(0, 2).toUpperCase()}
-                  </div>
-                )}
+              {hasLiveVideo && stream ? (
+                <DockVideoElement stream={stream} mirror={isLocal} />
+              ) : (
+                <div
+                  className="w-full h-full flex items-center justify-center text-xs font-display font-bold text-white"
+                  style={{ backgroundColor: peer.avatarColor }}
+                >
+                  {peer.name.slice(0, 2).toUpperCase()}
+                </div>
+              )}
 
-                {/* Mute badge */}
-                {!peer.media.audio && (
-                  <span className="absolute bottom-0 right-0 w-3.5 h-3.5 rounded-full bg-red-500 text-white flex items-center justify-center text-[8px]">
-                    🔇
-                  </span>
-                )}
-              </div>
-
-              <span className="text-[10px] font-display text-text-muted truncate max-w-[60px] text-center">
-                {isLocal ? "You" : peer.name}
-              </span>
+              {!peer.media.audio && (
+                <span
+                  title="Muted"
+                  className="absolute bottom-0.5 right-0.5 w-3.5 h-3.5 rounded-full bg-red-500/95 text-white flex items-center justify-center shadow-sm"
+                >
+                  <IconMicOff className="w-2.5 h-2.5" />
+                </span>
+              )}
             </div>
-          );
-        })}
-      </div>
+
+            <span className="text-[10px] font-display text-text-muted truncate max-w-[54px] text-center leading-tight">
+              {isLocal ? "You" : peer.name}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }

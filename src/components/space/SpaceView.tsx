@@ -81,13 +81,13 @@ export function SpaceView({
   // 3D / 2D View Mode (defaults to modern 3D Isometric WebGL!)
   const [viewMode, setViewMode] = useState<"3d" | "2d">("3d");
 
-  // Local Peer State
+  // Local Peer State (spread reception spawn slightly so joining coworkers don't overlap)
   const [localPeer, setLocalPeer] = useState<PeerState>(() => ({
     id: `peer_${Math.random().toString(36).substring(2, 9)}`,
     name: initialUserName,
     avatarColor: initialAvatarColor,
-    x: 8,
-    y: 20, // Spawn at reception
+    x: 6 + Math.floor(Math.random() * 5),
+    y: 19 + Math.floor(Math.random() * 3),
     dir: "down",
     isMoving: false,
     zoneId: "reception",
@@ -408,7 +408,9 @@ export function SpaceView({
                 localZone,
                 peerZone
               );
-              webrtcRef.current?.connectToPeer(msg.peer.id, true);
+              // Deterministic initiator avoids simultaneous double-offer glare
+              const shouldInitiate = myPeer.id < msg.peer.id;
+              void webrtcRef.current?.connectToPeer(msg.peer.id, shouldInitiate);
             }
           }
           break;
@@ -460,6 +462,7 @@ export function SpaceView({
             delete next[msg.id];
             return next;
           });
+          signalingRef.current?.detachDataChannel(msg.id);
           webrtcRef.current?.disconnectPeer(msg.id);
           break;
 
@@ -580,7 +583,10 @@ export function SpaceView({
           });
         }
       },
-      localPeerRef.current.id
+      localPeerRef.current.id,
+      (peerId: string, channel: RTCDataChannel) => {
+        signalingRef.current?.attachDataChannel(peerId, channel);
+      }
     );
 
     let cancelled = false;
@@ -588,8 +594,14 @@ export function SpaceView({
     webrtcRef.current = webrtc;
     webrtc
       .initLocalMedia(true, true)
-      .then((stream) => {
-        if (!cancelled && stream) {
+      .then(({ stream, hasAudio, hasVideo }) => {
+        if (cancelled) return;
+        setLocalPeer((prev) => ({
+          ...prev,
+          media: { ...prev.media, audio: hasAudio, video: hasVideo },
+        }));
+        signalingRef.current?.updateMedia({ audio: hasAudio, video: hasVideo });
+        if (stream) {
           setStreamsMap((prev) => ({
             ...prev,
             local: stream,
@@ -613,6 +625,7 @@ export function SpaceView({
 
       const expiredIds = new Set(expired.map((p) => p.id));
       for (const peer of expired) {
+        signalingRef.current?.detachDataChannel(peer.id);
         webrtcRef.current?.disconnectPeer(peer.id);
       }
 
@@ -1013,6 +1026,20 @@ export function SpaceView({
                 localPeerId={localPeer.id}
                 speakingMap={speakingMap}
                 streamsMap={streamsMap}
+                onBubbleClick={handleWarpToPeer}
+              />
+            </div>
+          )}
+
+          {/* Top-Center Active Office Video Strip (auto-appears when coworkers join or Docked mode is set) */}
+          {(videoLayout === "docked" || remotePeers.length > 0) && (
+            <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20">
+              <VideoDock
+                localPeer={localPeer}
+                nearbyPeers={nearbyPeers}
+                speakingMap={speakingMap}
+                streamsMap={streamsMap}
+                onSelectPeer={handleWarpToPeer}
               />
             </div>
           )}
@@ -1055,18 +1082,6 @@ export function SpaceView({
             />
           </div>
         </div>
-
-        {/* Bottom Video Strip (only when explicitly docked, or on mobile with active coworkers) */}
-        {(videoLayout === "docked" || remotePeers.length > 0) && (
-          <div className={videoLayout === "docked" ? "block" : "md:hidden"}>
-            <VideoDock
-              localPeer={localPeer}
-              nearbyPeers={nearbyPeers}
-              speakingMap={speakingMap}
-              streamsMap={streamsMap}
-            />
-          </div>
-        )}
       </div>
 
       {/* Right Collapsible Sidebar (Coworkers, Rooms, Chat) */}
