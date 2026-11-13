@@ -32,7 +32,7 @@ export function VideoDock({
         {allInProximity.map((peer) => {
           const isLocal = peer.id === localPeer.id;
           const isSpeaking = !!speakingMap[isLocal ? "local" : peer.id];
-          const stream = streamsMap[peer.id];
+          const stream = streamsMap[peer.id] || (isLocal ? streamsMap["local"] : undefined);
 
           return (
             <div
@@ -50,7 +50,7 @@ export function VideoDock({
                 }`}
               >
                 {stream && peer.media.video ? (
-                  <DockVideoElement stream={stream} />
+                  <DockVideoElement stream={stream} mirror={isLocal} />
                 ) : (
                   <div
                     className="w-full h-full flex items-center justify-center text-xs font-display font-bold text-white"
@@ -79,13 +79,16 @@ export function VideoDock({
   );
 }
 
-function DockVideoElement({ stream }: { stream: MediaStream }) {
+function DockVideoElement({ stream, mirror = false }: { stream: MediaStream; mirror?: boolean }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
-    if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
+    const videoEl = videoRef.current;
+    if (!videoEl || !stream) return;
+    if (videoEl.srcObject !== stream) {
+      videoEl.srcObject = stream;
     }
+    videoEl.play().catch(() => {});
   }, [stream]);
 
   return (
@@ -94,7 +97,7 @@ function DockVideoElement({ stream }: { stream: MediaStream }) {
       autoPlay
       playsInline
       muted
-      className="w-full h-full object-cover"
+      className={`w-full h-full object-cover ${mirror ? "scale-x-[-1]" : ""}`}
     />
   );
 }
