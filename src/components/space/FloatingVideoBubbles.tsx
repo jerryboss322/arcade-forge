@@ -1,44 +1,73 @@
 "use client";
 
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, memo } from "react";
 import { PeerState } from "@/lib/space/signaling";
+import {
+  ScreenPosition,
+  screenPositionsStore,
+} from "@/lib/space/screenPositionsStore";
 
 interface FloatingVideoBubblesProps {
   peers: PeerState[];
   speakingMap: Record<string, boolean>;
-  screenPositions: Record<string, { screenX: number; screenY: number; inView: boolean }>;
+  screenPositions?: Record<string, ScreenPosition>;
   streamsMap: Record<string, MediaStream>;
   onBubbleClick?: (peer: PeerState) => void;
 }
 
-export function FloatingVideoBubbles({
+export const FloatingVideoBubbles = memo(function FloatingVideoBubbles({
   peers,
   speakingMap,
   screenPositions,
   streamsMap,
   onBubbleClick,
 }: FloatingVideoBubblesProps) {
+  const bubbleRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Subscribe directly to 60Hz DOM transform updates without triggering React re-renders
+  useEffect(() => {
+    const applyPositions = (positions: Record<string, ScreenPosition>) => {
+      for (const [peerId, el] of Object.entries(bubbleRefs.current)) {
+        if (!el) continue;
+        const pos = positions[peerId];
+        if (!pos || !pos.inView) {
+          el.style.opacity = "0";
+          el.style.pointerEvents = "none";
+          continue;
+        }
+        const bubbleX = Math.round(pos.screenX - 32);
+        const bubbleY = Math.round(pos.screenY - 68);
+        el.style.transform = `translate3d(${bubbleX}px, ${bubbleY}px, 0)`;
+        el.style.opacity = "1";
+        el.style.pointerEvents = "auto";
+      }
+    };
+
+    // Apply current snapshot immediately
+    applyPositions(screenPositions || screenPositionsStore.getSnapshot());
+
+    return screenPositionsStore.subscribe(applyPositions);
+  }, [screenPositions, peers]);
+
   return (
     <div className="absolute inset-0 pointer-events-none overflow-hidden z-20">
       {peers.map((peer) => {
-        const pos = screenPositions[peer.id];
-        if (!pos || !pos.inView) return null;
-
         const isSpeaking = !!speakingMap[peer.id];
         const stream = streamsMap[peer.id];
-
-        // Anchor 45px above avatar's center
-        const bubbleX = pos.screenX - 32;
-        const bubbleY = pos.screenY - 68;
 
         return (
           <div
             key={peer.id}
+            ref={(el) => {
+              bubbleRefs.current[peer.id] = el;
+            }}
             style={{
-              transform: `translate3d(${Math.round(bubbleX)}px, ${Math.round(bubbleY)}px, 0)`,
+              transform: "translate3d(-9999px, -9999px, 0)",
+              opacity: 0,
+              willChange: "transform",
             }}
             onClick={() => onBubbleClick?.(peer)}
-            className="absolute top-0 left-0 w-16 h-16 rounded-full pointer-events-auto cursor-pointer transition-transform duration-75 hover:scale-110 flex items-center justify-center"
+            className="absolute top-0 left-0 w-16 h-16 rounded-full cursor-pointer hover:scale-110 flex items-center justify-center"
           >
             <div
               className={`w-full h-full rounded-full overflow-hidden border-2 bg-surface shadow-arcade flex items-center justify-center relative ${
@@ -75,13 +104,17 @@ export function FloatingVideoBubbles({
       })}
     </div>
   );
-}
+});
 
-function PeerVideoElement({ stream }: { stream: MediaStream }) {
+const PeerVideoElement = memo(function PeerVideoElement({
+  stream,
+}: {
+  stream: MediaStream;
+}) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   useEffect(() => {
-    if (videoRef.current && stream) {
+    if (videoRef.current && stream && videoRef.current.srcObject !== stream) {
       videoRef.current.srcObject = stream;
     }
   }, [stream]);
@@ -95,4 +128,4 @@ function PeerVideoElement({ stream }: { stream: MediaStream }) {
       className="w-full h-full object-cover"
     />
   );
-}
+});
