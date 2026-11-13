@@ -15,7 +15,8 @@ import {
   getThemeCssVars,
 } from "../src/lib/space/officeThemes";
 import { ScreenPositionsStore } from "../src/lib/space/screenPositionsStore";
-import { computeSpatialGain } from "../src/lib/space/webrtcMesh";
+import { computeSpatialGain, WebRTCMeshManager } from "../src/lib/space/webrtcMesh";
+import { hasActiveVideoFeed } from "../src/components/space/StreamVideo";
 import { GET, POST } from "../src/app/api/space/peers/route";
 import {
   getRedisRestConfig,
@@ -701,6 +702,313 @@ describe("ForgeSpace Upstash Redis / Vercel KV Store", () => {
       else process.env.UPSTASH_REDIS_REST_URL = origUrl;
       if (origToken === undefined) delete process.env.UPSTASH_REDIS_REST_TOKEN;
       else process.env.UPSTASH_REDIS_REST_TOKEN = origToken;
+    }
+  });
+
+  it("holds cursor before recent out-of-order Redis sequence gaps so SDP offers are never skipped", async () => {
+    const config = {
+      url: "https://redis-mock.upstash.io",
+      token: "secret-token",
+    };
+    const channel = `gap-room-${Date.now()}`;
+    const now = 1_700_000_000_000;
+    let msgsList: string[] = [
+      JSON.stringify({
+        seq: 1,
+        senderId: "peer_a",
+        timestamp: now,
+        msg: {
+          type: "peer_join",
+          peer: {
+            id: "peer_a",
+            name: "Alice",
+            avatarColor: "#37E6C4",
+            x: 5,
+            y: 5,
+            dir: "down",
+            isMoving: false,
+            zoneId: "reception",
+            status: "Focusing",
+            deskClaimed: null,
+            media: { audio: true, video: true, screen: false, speaking: false },
+            updatedAt: now,
+          },
+        },
+      }),
+      // seq 3 arrived before in-flight seq 2 (SDP offer)
+      JSON.stringify({
+        seq: 3,
+        senderId: "peer_a",
+        timestamp: now + 100,
+        msg: {
+          type: "webrtc_signal",
+          from: "peer_a",
+          to: "peer_b",
+          payload: { candidate: { candidate: "candidate:1" } },
+        },
+      }),
+    ];
+
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      const commands = JSON.parse(String(init?.body ?? "[]")) as unknown[][];
+      const results = commands.map((cmd) => {
+        const op = String(cmd[0]).toUpperCase();
+        if (op === "HGETALL") return { result: [] };
+        if (op === "LRANGE") return { result: msgsList };
+        if (op === "GET") return { result: "3" };
+        return { result: null };
+      });
+      return new Response(JSON.stringify(results), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }) as typeof fetch;
+
+    try {
+      // First poll sees seq 1 and holds cursor at 1 while seq 2 is still in flight
+      const poll1 = await pollRedisChannel(config, channel, "peer_b", 0, now + 120);
+      expect(poll1.messages.map((m) => m.type)).toEqual(["peer_join"]);
+      expect(poll1.cursor).toBe(1);
+
+      // Now in-flight seq 2 (SDP offer) finishes pushing to Redis
+      msgsList = [
+        ...msgsList,
+        JSON.stringify({
+          seq: 2,
+          senderId: "peer_a",
+          timestamp: now + 90,
+          msg: {
+            type: "webrtc_signal",
+            from: "peer_a",
+            to: "peer_b",
+            payload: { sdp: { type: "offer", sdp: "v=0..." } },
+          },
+        }),
+      ];
+
+      // Next poll from cursor 1 delivers seq 2 (offer) and seq 3 (candidate) in strict order
+      const poll2 = await pollRedisChannel(config, channel, "peer_b", poll1.cursor, now + 200);
+      expect(poll2.cursor).toBe(3);
+      expect(poll2.messages).toHaveLength(2);
+      expect((poll2.messages[0] as { payload: { sdp?: unknown } }).payload.sdp).toBeDefined();
+      expect((poll2.messages[1] as { payload: { candidate?: unknown } }).payload.candidate).toBeDefined();
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+});
+
+describe("ForgeSpace WebRTC Media & Transceiver Fixes", () => {
+  it("gates remote video rendering on unmuted live tracks and allows screen-only sharing", () => {
+    const createFakeStream = (muted: boolean) =>
+      ({
+        getVideoTracks: () => [{ readyState: "live", enabled: true, muted }],
+      }) as unknown as MediaStream;
+
+    const camOnMedia = { audio: true, video: true, screen: false, speaking: false };
+    const screenOnlyMedia = { audio: true, video: false, screen: true, speaking: false };
+    const allOffMedia = { audio: true, video: false, screen: false, speaking: false };
+
+    // Remote stream whose track is still muted (no decoded RTP frames yet) should not paint black <video>
+    expect(hasActiveVideoFeed(createFakeStream(true), camOnMedia, false)).toBe(false);
+    // Remote stream with decoded video frames renders immediately
+    expect(hasActiveVideoFeed(createFakeStream(false), camOnMedia, false)).toBe(true);
+    // Remote peer sharing screen with webcam turned off still renders video
+    expect(hasActiveVideoFeed(createFakeStream(false), screenOnlyMedia, false)).toBe(true);
+    // Turning camera and screen off hides video cleanly
+    expect(hasActiveVideoFeed(createFakeStream(false), allOffMedia, false)).toBe(false);
+  });
+
+  it("defers responder transceiver creation until remote offer and renegotiates on screen share", async () => {
+    const origPC = globalThis.RTCPeerConnection;
+    const origDesc = globalThis.RTCSessionDescription;
+    const origNav = globalThis.navigator;
+    const origStream = globalThis.MediaStream;
+
+    const createdPcs: Array<{
+      addTrackCalls: number;
+      addTransceiverCalls: string[];
+      transceivers: Array<{
+        mid: string | null;
+        stopped: boolean;
+        direction: string;
+        sender: { track: { kind: string } | null; replaceTrack: (t: unknown) => Promise<void> };
+        receiver: { track: { kind: string } };
+      }>;
+    }> = [];
+
+    class MockPC {
+      signalingState = "stable";
+      connectionState = "new";
+      iceConnectionState = "new";
+      localDescription: unknown = null;
+      remoteDescription: unknown = null;
+      addTrackCalls = 0;
+      addTransceiverCalls: string[] = [];
+      transceivers: Array<{
+        mid: string | null;
+        stopped: boolean;
+        direction: string;
+        sender: { track: { kind: string } | null; replaceTrack: (t: unknown) => Promise<void> };
+        receiver: { track: { kind: string } };
+      }> = [];
+
+      constructor() {
+        createdPcs.push(this);
+      }
+      createDataChannel() {
+        return {};
+      }
+      getTransceivers() {
+        return this.transceivers;
+      }
+      addTrack(track: { kind: string }) {
+        this.addTrackCalls += 1;
+        this.transceivers.push({
+          mid: null,
+          stopped: false,
+          direction: "sendrecv",
+          sender: {
+            track,
+            replaceTrack: async (next: unknown) => {
+              this.transceivers.at(-1)!.sender.track = next as { kind: string } | null;
+            },
+          },
+          receiver: { track: { kind: track.kind } },
+        });
+      }
+      addTransceiver(kind: string, init?: { direction?: string }) {
+        this.addTransceiverCalls.push(kind);
+        const t = {
+          mid: null,
+          stopped: false,
+          direction: init?.direction ?? "sendrecv",
+          sender: {
+            track: null as { kind: string } | null,
+            replaceTrack: async (next: unknown) => {
+              t.sender.track = next as { kind: string } | null;
+            },
+          },
+          receiver: { track: { kind } },
+        };
+        this.transceivers.push(t);
+        return t;
+      }
+      async setRemoteDescription(desc: { type: string }) {
+        this.remoteDescription = desc;
+        if (desc.type === "offer" && this.transceivers.length === 0) {
+          for (const [idx, kind] of ["audio", "video"].entries()) {
+            const t = {
+              mid: String(idx),
+              stopped: false,
+              direction: "recvonly",
+              sender: {
+                track: null as { kind: string } | null,
+                replaceTrack: async (next: unknown) => {
+                  t.sender.track = next as { kind: string } | null;
+                },
+              },
+              receiver: { track: { kind } },
+            };
+            this.transceivers.push(t);
+          }
+        }
+      }
+      async createOffer() {
+        return { type: "offer", sdp: "mock-offer" };
+      }
+      async createAnswer() {
+        return { type: "answer", sdp: "mock-answer" };
+      }
+      async setLocalDescription(desc: unknown) {
+        this.localDescription = desc;
+      }
+      async addIceCandidate() {}
+      close() {}
+    }
+
+    (globalThis as unknown as Record<string, unknown>).RTCPeerConnection = MockPC;
+    (globalThis as unknown as Record<string, unknown>).RTCSessionDescription = class {
+      type: string;
+      sdp: string;
+      constructor(init: { type: string; sdp?: string }) {
+        this.type = init.type;
+        this.sdp = init.sdp ?? "";
+      }
+    };
+    (globalThis as unknown as Record<string, unknown>).MediaStream = class {
+      constructor(private tracks: unknown[] = []) {}
+      getTracks() {
+        return this.tracks;
+      }
+      getAudioTracks() {
+        return this.tracks.filter((t) => (t as { kind: string }).kind === "audio");
+      }
+      getVideoTracks() {
+        return this.tracks.filter((t) => (t as { kind: string }).kind === "video");
+      }
+    };
+
+    const signals: Array<{ to: string; payload: unknown }> = [];
+    const screenTrack = { kind: "video", enabled: true, onended: null, stop() {} };
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {
+        mediaDevices: {
+          getUserMedia: async () => ({
+            getTracks: () => [{ kind: "audio", enabled: true, stop() {} }],
+            getAudioTracks: () => [{ kind: "audio", enabled: true, stop() {} }],
+            getVideoTracks: () => [],
+          }),
+          getDisplayMedia: async () => ({
+            getTracks: () => [screenTrack],
+            getAudioTracks: () => [],
+            getVideoTracks: () => [screenTrack],
+          }),
+        },
+      },
+    });
+
+    const mesh = new WebRTCMeshManager(
+      (to, payload) => signals.push({ to, payload }),
+      () => {},
+      () => {},
+      "peer_z"
+    );
+
+    try {
+      await mesh.initLocalMedia(true, true);
+      // Passive responder connects BEFORE offer arrives
+      await mesh.connectToPeer("peer_a", false);
+      const pc = createdPcs[0]!;
+      expect(pc.addTrackCalls).toBe(0);
+      expect(pc.addTransceiverCalls).toHaveLength(0);
+
+      // Offer arrives -> responder attaches audio track directly onto mid "0" transceiver
+      // while video mid "1" stays recvonly until screen share turns on
+      await mesh.handleSignal("peer_a", { sdp: { type: "offer", sdp: "remote-offer" } });
+      expect(pc.transceivers[0]!.mid).toBe("0");
+      expect(pc.transceivers[0]!.direction).toBe("sendrecv");
+      expect(pc.transceivers[1]!.direction).toBe("recvonly");
+      expect(signals).toHaveLength(1); // initial answer
+
+      // Starting screen share upgrades video transceiver to sendrecv AND sends a renegotiation offer
+      const sharing = await mesh.toggleScreenShare();
+      expect(sharing).toBe(true);
+      expect(pc.transceivers[1]!.direction).toBe("sendrecv");
+      expect(pc.transceivers[1]!.sender.track).toBe(screenTrack);
+      expect(signals).toHaveLength(2);
+      expect((signals[1]!.payload as { sdp: { type: string } }).sdp.type).toBe("offer");
+    } finally {
+      mesh.destroy();
+      (globalThis as unknown as Record<string, unknown>).RTCPeerConnection = origPC;
+      (globalThis as unknown as Record<string, unknown>).RTCSessionDescription = origDesc;
+      (globalThis as unknown as Record<string, unknown>).MediaStream = origStream;
+      Object.defineProperty(globalThis, "navigator", {
+        configurable: true,
+        value: origNav,
+      });
     }
   });
 });
