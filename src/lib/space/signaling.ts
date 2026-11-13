@@ -41,9 +41,12 @@ export class SpaceSignaling {
   private pollInterval: ReturnType<typeof setInterval> | null = null;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private moveFlushTimer: ReturnType<typeof setTimeout> | null = null;
+  private fastPollTimer: ReturnType<typeof setTimeout> | null = null;
   private pendingMoveMsg: SignalMessage | null = null;
   private lastEdgeSendAt = 0;
   private lastEdgeCursor = 0;
+  private pollInFlight = false;
+  private discoveredEdgePeers = new Set<string>();
   public localPeer: PeerState;
 
   constructor(
@@ -126,39 +129,72 @@ export class SpaceSignaling {
           senderId: this.localPeer.id,
         }),
       });
+      if (msg.type === "webrtc_signal" || msg.type === "peer_join") {
+        this.scheduleFastPoll();
+      }
     } catch {
       // Offline/sandbox safe
+    }
+  }
+
+  private scheduleFastPoll(): void {
+    if (this.fastPollTimer) return;
+    this.fastPollTimer = setTimeout(() => {
+      this.fastPollTimer = null;
+      void this.pollEdge();
+    }, 150);
+  }
+
+  private async pollEdge(): Promise<void> {
+    if (this.pollInFlight) return;
+    if (typeof document !== "undefined" && document.hidden) return;
+    this.pollInFlight = true;
+    try {
+      const res = await fetch(
+        `/api/space/peers?channel=${encodeURIComponent(this.channelName)}&senderId=${encodeURIComponent(this.localPeer.id)}&since=${this.lastEdgeCursor}`
+      );
+      if (res.ok) {
+        const data = await res.json();
+        if (typeof data.serverTime === "number") {
+          this.lastEdgeCursor = data.serverTime;
+        }
+        if (Array.isArray(data.peers)) {
+          for (const peer of data.peers as PeerState[]) {
+            if (peer.id !== this.localPeer.id && !this.discoveredEdgePeers.has(peer.id)) {
+              this.discoveredEdgePeers.add(peer.id);
+              this.onMessageCb({ type: "peer_join", peer });
+            }
+          }
+        }
+        if (Array.isArray(data.messages)) {
+          for (const msg of data.messages as SignalMessage[]) {
+            if (msg.type === "peer_join") {
+              this.discoveredEdgePeers.add(msg.peer.id);
+            } else if (msg.type === "peer_leave") {
+              this.discoveredEdgePeers.delete(msg.id);
+            }
+            this.onMessageCb(msg);
+          }
+        }
+      }
+    } catch {
+      // Fallback silently
+    } finally {
+      this.pollInFlight = false;
     }
   }
 
   private startHeartbeatSync(): void {
     if (typeof window === "undefined") return;
 
-    // Send initial join
+    // Send initial join and fetch active coworkers immediately
     this.broadcast({ type: "peer_join", peer: this.localPeer });
+    void this.pollEdge();
 
-    // Poll edge for remote peer messages every 2s using incremental timestamp cursor
-    this.pollInterval = setInterval(async () => {
-      if (typeof document !== "undefined" && document.hidden) return;
-      try {
-        const res = await fetch(
-          `/api/space/peers?channel=${encodeURIComponent(this.channelName)}&senderId=${encodeURIComponent(this.localPeer.id)}&since=${this.lastEdgeCursor}`
-        );
-        if (res.ok) {
-          const data = await res.json();
-          if (typeof data.serverTime === "number") {
-            this.lastEdgeCursor = data.serverTime;
-          }
-          if (Array.isArray(data.messages)) {
-            for (const msg of data.messages) {
-              this.onMessageCb(msg);
-            }
-          }
-        }
-      } catch {
-        // Fallback silently
-      }
-    }, 2000);
+    // Poll edge for remote peer messages & WebRTC signals every 1s using incremental cursor
+    this.pollInterval = setInterval(() => {
+      void this.pollEdge();
+    }, 1000);
 
     // Periodic presence heartbeat (every 10s) so newly joined users discover existing peers
     this.heartbeatInterval = setInterval(() => {
@@ -272,6 +308,7 @@ export class SpaceSignaling {
     if (this.pollInterval) clearInterval(this.pollInterval);
     if (this.heartbeatInterval) clearInterval(this.heartbeatInterval);
     if (this.moveFlushTimer) clearTimeout(this.moveFlushTimer);
+    if (this.fastPollTimer) clearTimeout(this.fastPollTimer);
     this.broadcast({ type: "peer_leave", id: this.localPeer.id });
     if (this.bc) {
       this.bc.close();
