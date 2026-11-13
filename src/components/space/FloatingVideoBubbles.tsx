@@ -7,6 +7,7 @@ import {
   screenPositionsStore,
 } from "@/lib/space/screenPositionsStore";
 import { IconMicOff } from "@/components/space/SpaceIcons";
+import { hasActiveVideoFeed, StreamVideo } from "@/components/space/StreamVideo";
 
 interface FloatingVideoBubblesProps {
   peers: PeerState[];
@@ -33,11 +34,7 @@ const FloatingBubble = memo(function FloatingBubble({
   onBubbleClick?: (peer: PeerState) => void;
 }) {
   const elRef = useRef<HTMLDivElement | null>(null);
-  const hasLiveVideo = Boolean(
-    stream &&
-      peer.media.video &&
-      stream.getVideoTracks().some((t) => t.readyState === "live")
-  );
+  const hasLiveVideo = hasActiveVideoFeed(stream, peer.media, isLocal);
 
   const applyPosition = (pos?: ScreenPosition) => {
     const el = elRef.current;
@@ -88,7 +85,7 @@ const FloatingBubble = memo(function FloatingBubble({
         }`}
       >
         {hasLiveVideo && stream ? (
-          <PeerVideoElement stream={stream} mirror={isLocal} />
+          <StreamVideo stream={stream} mirror={isLocal} />
         ) : (
           <div
             className="w-full h-full flex flex-col items-center justify-center"
@@ -148,34 +145,5 @@ export const FloatingVideoBubbles = memo(function FloatingVideoBubbles({
         );
       })}
     </div>
-  );
-});
-
-const PeerVideoElement = memo(function PeerVideoElement({
-  stream,
-  mirror = false,
-}: {
-  stream: MediaStream;
-  mirror?: boolean;
-}) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-
-  useEffect(() => {
-    const videoEl = videoRef.current;
-    if (!videoEl || !stream) return;
-    if (videoEl.srcObject !== stream) {
-      videoEl.srcObject = stream;
-    }
-    videoEl.play().catch(() => {});
-  }, [stream]);
-
-  return (
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      muted
-      className={`w-full h-full object-cover ${mirror ? "scale-x-[-1]" : ""}`}
-    />
   );
 });

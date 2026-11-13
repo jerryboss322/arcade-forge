@@ -865,7 +865,11 @@ export function SpaceView({
   };
 
   const activePresenter = remotePeers.find((p) => p.media.screen) || (localPeer.media.screen ? localPeer : null);
-  const activePresenterStream = activePresenter ? streamsMap[activePresenter.id] || webrtcRef.current?.getLocalStream() || null : null;
+  const activePresenterStream = activePresenter
+    ? activePresenter.id === localPeer.id
+      ? webrtcRef.current?.getLocalStream() || streamsMap[localPeer.id] || streamsMap["local"] || null
+      : streamsMap[activePresenter.id] || null
+    : null;
 
   return (
     <div

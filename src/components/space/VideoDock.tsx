@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useRef, useEffect } from "react";
+import React from "react";
 import { PeerState } from "@/lib/space/signaling";
 import { IconMicOff } from "@/components/space/SpaceIcons";
+import { hasActiveVideoFeed, StreamVideo } from "@/components/space/StreamVideo";
 
 interface VideoDockProps {
   localPeer: PeerState;
@@ -27,11 +28,7 @@ export function VideoDock({
         const isLocal = peer.id === localPeer.id;
         const isSpeaking = !!(speakingMap[isLocal ? "local" : peer.id] || speakingMap[peer.id]);
         const stream = streamsMap[peer.id] || (isLocal ? streamsMap["local"] : undefined);
-        const hasLiveVideo = Boolean(
-          stream &&
-            peer.media.video &&
-            stream.getVideoTracks().some((t) => t.readyState === "live")
-        );
+        const hasLiveVideo = hasActiveVideoFeed(stream, peer.media, isLocal);
 
         return (
           <button
@@ -51,7 +48,7 @@ export function VideoDock({
               }`}
             >
               {hasLiveVideo && stream ? (
-                <DockVideoElement stream={stream} mirror={isLocal} />
+                <StreamVideo stream={stream} mirror={isLocal} />
               ) : (
                 <div
                   className="w-full h-full flex items-center justify-center text-xs font-display font-bold text-white"
@@ -78,28 +75,5 @@ export function VideoDock({
         );
       })}
     </div>
-  );
-}
-
-function DockVideoElement({ stream, mirror = false }: { stream: MediaStream; mirror?: boolean }) {
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-
-  useEffect(() => {
-    const videoEl = videoRef.current;
-    if (!videoEl || !stream) return;
-    if (videoEl.srcObject !== stream) {
-      videoEl.srcObject = stream;
-    }
-    videoEl.play().catch(() => {});
-  }, [stream]);
-
-  return (
-    <video
-      ref={videoRef}
-      autoPlay
-      playsInline
-      muted
-      className={`w-full h-full object-cover ${mirror ? "scale-x-[-1]" : ""}`}
-    />
   );
 }
