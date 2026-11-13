@@ -29,6 +29,7 @@ export type SignalMessage =
   | { type: "peer_move"; id: string; x: number; y: number; dir: PeerState["dir"]; isMoving: boolean; zoneId: string }
   | { type: "peer_status"; id: string; status: string; deskClaimed?: string | null; name?: string; avatarColor?: string }
   | { type: "peer_media"; id: string; media: PeerMediaState }
+  | { type: "peer_reaction"; id: string; emoji: string; label: string; expiresAt: number }
   | { type: "peer_leave"; id: string }
   | { type: "webrtc_signal"; from: string; to: string; payload: any }
   | { type: "chat"; id: string; sender: string; text: string; time: string; zoneId?: string };
@@ -241,6 +242,18 @@ export class SpaceSignaling {
       text,
       time,
       zoneId,
+    };
+    this.onMessageCb(msg); // echo to local
+    this.broadcast(msg);
+  }
+
+  public sendReaction(emoji: string, label: string, durationMs = 3800): void {
+    const msg: SignalMessage = {
+      type: "peer_reaction",
+      id: this.localPeer.id,
+      emoji,
+      label,
+      expiresAt: Date.now() + durationMs,
     };
     this.onMessageCb(msg); // echo to local
     this.broadcast(msg);
