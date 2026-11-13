@@ -14,7 +14,7 @@ import {
   PeerState,
   SignalMessage,
 } from "@/lib/space/signaling";
-import { WebRTCMeshManager } from "@/lib/space/webrtcMesh";
+import { AudioScope, WebRTCMeshManager } from "@/lib/space/webrtcMesh";
 import { SpaceCanvas } from "@/components/space/SpaceCanvas";
 import { Space3DCanvas } from "@/components/space/Space3DCanvas";
 import { SpaceControls } from "@/components/space/SpaceControls";
@@ -42,6 +42,7 @@ import {
   IconDoor,
   IconExpand,
   IconLink,
+  IconMic,
   IconScreenShare,
   IconSidebarPanel,
 } from "@/components/space/SpaceIcons";
@@ -124,6 +125,7 @@ export function SpaceView({
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("people");
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const [themeId, setThemeId] = useState<OfficeThemeId>("midnight");
+  const [audioScope, setAudioScope] = useState<AudioScope>("office");
   const [peerReactions, setPeerReactions] = useState<Record<string, ActivePeerReaction>>({});
   const [preJoinOpen, setPreJoinOpen] = useState(false);
   const [activeDesk, setActiveDesk] = useState<InteractiveObject | null>(null);
@@ -249,6 +251,7 @@ export function SpaceView({
 
   // Toggle Media Controls & Floor Reactions
   const handleToggleAudio = useCallback(() => {
+    void webrtcRef.current?.resumeAudio();
     const unmuted = webrtcRef.current?.toggleAudio() ?? false;
     setLocalPeer((prev) => {
       const nextMedia = { ...prev.media, audio: unmuted };
@@ -339,6 +342,59 @@ export function SpaceView({
   isSidebarOpenRef.current = isSidebarOpen;
   const sidebarTabRef = useRef(sidebarTab);
   sidebarTabRef.current = sidebarTab;
+  const audioScopeRef = useRef<AudioScope>(audioScope);
+  audioScopeRef.current = audioScope;
+
+  // Keep spatial gain and zone isolation synchronized across all active peers
+  const syncAllSpatialDistances = useCallback(
+    (
+      lx = localPeerRef.current.x,
+      ly = localPeerRef.current.y,
+      peers = remotePeersRef.current
+    ) => {
+      const webrtc = webrtcRef.current;
+      if (!webrtc) return;
+      const localZone = getZoneAt(lx, ly, map.zones);
+      for (let i = 0; i < peers.length; i++) {
+        const peer = peers[i]!;
+        const peerZone = getZoneAt(peer.x, peer.y, map.zones);
+        webrtc.updateSpatialDistance(
+          peer.id,
+          lx,
+          ly,
+          peer.x,
+          peer.y,
+          localZone,
+          peerZone
+        );
+      }
+    },
+    [map.zones]
+  );
+
+  // Switch between office-wide audio (all open-floor coworkers audible) and proximity (<= 8 tiles)
+  const handleToggleAudioScope = useCallback(() => {
+    void webrtcRef.current?.resumeAudio();
+    setAudioScope((prev) => {
+      const next: AudioScope = prev === "office" ? "proximity" : "office";
+      webrtcRef.current?.setAudioScope(next);
+      syncAllSpatialDistances();
+      return next;
+    });
+  }, [syncAllSpatialDistances]);
+
+  // Unlock browser Web Audio / media playback on first user pointer or keyboard interaction
+  useEffect(() => {
+    const unlockAudio = () => {
+      void webrtcRef.current?.resumeAudio();
+    };
+    window.addEventListener("pointerdown", unlockAudio, { passive: true });
+    window.addEventListener("keydown", unlockAudio, { passive: true });
+    return () => {
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
+    };
+  }, []);
 
   // Handle Incoming Signaling Messages (stable callback)
   const handleSignalMessage = useCallback(
@@ -361,7 +417,18 @@ export function SpaceView({
 
             if (!alreadyKnown) {
               officeAudio.playPeerJoinNotification();
-              // Connect WebRTC peer as initiator only on initial discovery
+              // Compute initial spatial gain & initiate WebRTC connection on first discovery
+              const localZone = getZoneAt(myPeer.x, myPeer.y, map.zones);
+              const peerZone = getZoneAt(msg.peer.x, msg.peer.y, map.zones);
+              webrtcRef.current?.updateSpatialDistance(
+                msg.peer.id,
+                myPeer.x,
+                myPeer.y,
+                msg.peer.x,
+                msg.peer.y,
+                localZone,
+                peerZone
+              );
               webrtcRef.current?.connectToPeer(msg.peer.id, true);
             }
           }
@@ -402,6 +469,18 @@ export function SpaceView({
 
         case "peer_leave":
           setRemotePeers((prev) => prev.filter((p) => p.id !== msg.id));
+          setStreamsMap((prev) => {
+            if (!(msg.id in prev)) return prev;
+            const next = { ...prev };
+            delete next[msg.id];
+            return next;
+          });
+          setSpeakingMap((prev) => {
+            if (!(msg.id in prev)) return prev;
+            const next = { ...prev };
+            delete next[msg.id];
+            return next;
+          });
           webrtcRef.current?.disconnectPeer(msg.id);
           break;
 
@@ -493,6 +572,19 @@ export function SpaceView({
         if (isSpeaking !== undefined) {
           setSpeakingMap((prev) => ({ ...prev, [peerId]: isSpeaking }));
         }
+        const matchedPeer = remotePeersRef.current.find((p) => p.id === peerId);
+        if (matchedPeer) {
+          const lp = localPeerRef.current;
+          webrtc.updateSpatialDistance(
+            peerId,
+            lp.x,
+            lp.y,
+            matchedPeer.x,
+            matchedPeer.y,
+            getZoneAt(lp.x, lp.y, map.zones),
+            getZoneAt(matchedPeer.x, matchedPeer.y, map.zones)
+          );
+        }
       },
       (peerId: string, isSpeaking: boolean) => {
         setSpeakingMap((prev) => {
@@ -513,6 +605,7 @@ export function SpaceView({
     );
 
     let cancelled = false;
+    webrtc.setAudioScope(audioScopeRef.current);
     webrtcRef.current = webrtc;
     webrtc
       .initLocalMedia(true, true)
@@ -536,15 +629,36 @@ export function SpaceView({
     // 3. Periodically prune disconnected peers that missed peer_leave (> 30s without heartbeat)
     const pruneTimer = setInterval(() => {
       const cutoff = Date.now() - 30_000;
-      setRemotePeers((prev) => {
-        const active = prev.filter((p) => {
-          if (p.updatedAt < cutoff) {
-            webrtcRef.current?.disconnectPeer(p.id);
-            return false;
+      const expired = remotePeersRef.current.filter((p) => p.updatedAt < cutoff);
+      if (expired.length === 0) return;
+
+      const expiredIds = new Set(expired.map((p) => p.id));
+      for (const peer of expired) {
+        webrtcRef.current?.disconnectPeer(peer.id);
+      }
+
+      setRemotePeers((prev) => prev.filter((p) => !expiredIds.has(p.id)));
+      setStreamsMap((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const id of expiredIds) {
+          if (id in next) {
+            delete next[id];
+            changed = true;
           }
-          return true;
-        });
-        return active.length === prev.length ? prev : active;
+        }
+        return changed ? next : prev;
+      });
+      setSpeakingMap((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const id of expiredIds) {
+          if (id in next) {
+            delete next[id];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
       });
     }, 10_000);
 
@@ -588,23 +702,9 @@ export function SpaceView({
       }
 
       // Update distance attenuation for all remote peers
-      const localZone = getZoneAt(x, y, map.zones);
-      const peers = remotePeersRef.current;
-      for (let i = 0; i < peers.length; i++) {
-        const peer = peers[i]!;
-        const peerZone = getZoneAt(peer.x, peer.y, map.zones);
-        webrtcRef.current?.updateSpatialDistance(
-          peer.id,
-          x,
-          y,
-          peer.x,
-          peer.y,
-          localZone,
-          peerZone
-        );
-      }
+      syncAllSpatialDistances(x, y);
     },
-    [map.zones]
+    [syncAllSpatialDistances]
   );
 
   // Handle Object Interactions
@@ -743,8 +843,16 @@ export function SpaceView({
     );
   };
 
-  // Nearby peers (distance <= 8 tiles)
+  // Peers visible in VideoDock: everyone on open floor/same zone in office mode, or within 8 tiles in proximity mode
+  const localZone = getZoneAt(localPeer.x, localPeer.y, map.zones);
   const nearbyPeers = remotePeers.filter((p) => {
+    const peerZone = getZoneAt(p.x, p.y, map.zones);
+    if (audioScope === "office") {
+      if (localZone?.isPrivate || peerZone?.isPrivate) {
+        return localZone?.id === peerZone?.id;
+      }
+      return true;
+    }
     const dist = Math.hypot(p.x - localPeer.x, p.y - localPeer.y);
     return dist <= 8 || p.zoneId === localPeer.zoneId;
   });
@@ -761,6 +869,7 @@ export function SpaceView({
   const activePresenterStream = activePresenter ? streamsMap[activePresenter.id] || webrtcRef.current?.getLocalStream() || null : null;
 
   const dismissLobby = () => {
+    void webrtcRef.current?.resumeAudio();
     setPreJoinOpen(false);
     if (typeof window !== "undefined") {
       window.sessionStorage.setItem(`forgespace_lobby_${spaceSlug}`, "1");
@@ -831,6 +940,26 @@ export function SpaceView({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+            <button
+              type="button"
+              onClick={handleToggleAudioScope}
+              aria-pressed={audioScope === "office"}
+              title={
+                audioScope === "office"
+                  ? "Office Audio: hear everyone on the open floor (click for Proximity)"
+                  : "Proximity Audio: hear coworkers within 8 tiles (click for Office Audio)"
+              }
+              className={`px-2.5 py-1 text-xs border rounded-control flex items-center gap-1.5 font-display font-semibold transition-colors ${
+                audioScope === "office"
+                  ? "bg-emerald-500/15 border-emerald-400/50 text-emerald-300 hover:bg-emerald-500/25"
+                  : "bg-surface-2 hover:bg-surface border-border text-muted hover:text-text hover:border-accent"
+              }`}
+            >
+              <IconMic className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">
+                {audioScope === "office" ? "Office Audio" : "Proximity"}
+              </span>
+            </button>
             {activePresenter && (
               <button
                 type="button"
