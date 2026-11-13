@@ -7,6 +7,7 @@ interface SpaceControlsProps {
   isVideoMuted: boolean;
   isScreenSharing: boolean;
   isSidebarOpen: boolean;
+  unreadChatCount?: number;
   isFullscreen: boolean;
   videoLayout: "floating" | "docked";
   viewMode: "3d" | "2d";
@@ -28,6 +29,7 @@ export function SpaceControls({
   isVideoMuted,
   isScreenSharing,
   isSidebarOpen,
+  unreadChatCount = 0,
   isFullscreen,
   videoLayout,
   viewMode,
@@ -140,15 +142,33 @@ export function SpaceControls({
 
       {/* Sidebar toggle */}
       <button
+        type="button"
         onClick={onToggleSidebar}
-        title={isSidebarOpen ? "Hide Sidebar" : "Show Sidebar"}
-        className={`w-10 h-10 rounded-full flex items-center justify-center transition-transform active:scale-95 ${
+        aria-pressed={isSidebarOpen}
+        aria-label={
+          unreadChatCount > 0
+            ? `${isSidebarOpen ? "Hide" : "Show"} sidebar (${unreadChatCount} unread messages)`
+            : isSidebarOpen
+              ? "Hide sidebar"
+              : "Show sidebar"
+        }
+        title={
+          unreadChatCount > 0
+            ? `${isSidebarOpen ? "Hide" : "Show"} Sidebar (B) — ${unreadChatCount} unread`
+            : `${isSidebarOpen ? "Hide" : "Show"} Sidebar (B)`
+        }
+        className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-transform active:scale-95 ${
           isSidebarOpen
             ? "bg-accent/20 text-accent border border-accent"
             : "bg-surface-2 text-text border border-border hover:border-accent"
         }`}
       >
         <span className="text-sm">👥</span>
+        {unreadChatCount > 0 && (
+          <span className="absolute -top-1 -right-1 min-w-[1.1rem] h-[1.1rem] px-1 rounded-full bg-accent text-bg text-[9px] font-bold flex items-center justify-center shadow-sm border border-surface">
+            {unreadChatCount > 99 ? "99+" : unreadChatCount}
+          </span>
+        )}
       </button>
 
       {/* Fullscreen toggle */}
