@@ -1015,11 +1015,11 @@ export const Space3DCanvas = memo(function Space3DCanvas({
         </div>
       )}
 
-      {/* Top-Right 3D Camera Zoom & Angle Controls */}
+      {/* Bottom-Right 3D Camera Zoom & Angle Controls (subtle on desktop) */}
       <div
         onMouseDown={(e) => e.stopPropagation()}
         onTouchStart={(e) => e.stopPropagation()}
-        className="absolute top-3 right-3 z-20 flex items-center gap-1 px-2 py-1 rounded-full bg-surface/90 backdrop-blur-md border border-border shadow-arcade text-[11px] font-mono text-text"
+        className="hidden sm:flex absolute bottom-4 right-4 z-20 items-center gap-0.5 px-1.5 py-1 rounded-full bg-surface/70 backdrop-blur-md border border-border/70 shadow-sm text-[11px] font-mono text-text opacity-75 hover:opacity-100 transition-opacity"
       >
         <button
           type="button"
