@@ -1,8 +1,20 @@
 // Distributed & Local Channel Store for ForgeSpace Peer Discovery & WebRTC Signaling.
-// Uses Upstash Redis / Vercel KV REST API when configured so all serverless containers share state,
-// and falls back seamlessly to an in-memory store for local development & unit tests.
+// Uses Upstash Redis / Vercel KV REST API so all serverless containers share state.
+// Allows in-memory storage ONLY in non-production environments when Redis is not configured.
 
 import type { PeerState, SignalMessage } from "./signaling";
+
+export type SpaceStoreErrorCode = "MISSING_CONFIG" | "REDIS_ERROR";
+
+export class SpaceStoreError extends Error {
+  public readonly code: SpaceStoreErrorCode;
+
+  constructor(message: string, code: SpaceStoreErrorCode) {
+    super(message);
+    this.name = "SpaceStoreError";
+    this.code = code;
+  }
+}
 
 export interface CachedMessage {
   seq: number;
@@ -285,12 +297,28 @@ async function runRedisPipeline(
   });
 
   if (!res.ok) {
-    throw new Error(`Upstash REST HTTP ${res.status}`);
+    throw new SpaceStoreError(`Upstash REST HTTP ${res.status}`, "REDIS_ERROR");
   }
 
   const data = (await res.json()) as Array<{ result?: unknown; error?: string }>;
   if (!Array.isArray(data)) {
-    throw new Error("Invalid Upstash pipeline response");
+    throw new SpaceStoreError("Invalid Upstash pipeline response", "REDIS_ERROR");
+  }
+  if (data.length !== commands.length) {
+    throw new SpaceStoreError(
+      `Upstash pipeline result length mismatch: expected ${commands.length}, got ${data.length}`,
+      "REDIS_ERROR"
+    );
+  }
+  for (let i = 0; i < data.length; i++) {
+    const entry = data[i];
+    if (entry && typeof entry.error === "string" && entry.error.length > 0) {
+      const cmdName = String(commands[i]?.[0] ?? "UNKNOWN");
+      throw new SpaceStoreError(
+        `Redis command ${cmdName} failed: ${entry.error}`,
+        "REDIS_ERROR"
+      );
+    }
   }
   return data;
 }
@@ -363,7 +391,10 @@ export async function pollRedisChannel(
 
   // Opportunistically clean stale peers without blocking response
   if (stalePeerIds.length > 0) {
-    void runRedisPipeline(config, [["HDEL", peersKey, ...stalePeerIds]]).catch(() => {});
+    void runRedisPipeline(config, [["HDEL", peersKey, ...stalePeerIds]]).catch((err) => {
+      const detail = err instanceof Error ? err.message : "Unknown cleanup error";
+      console.warn(`[spaceStore] Stale peer cleanup failed (channel=${channel}): ${detail}`);
+    });
   }
 
   const parsedMessages: CachedMessage[] = [];
@@ -475,14 +506,27 @@ export async function pollChannel(
   now = Date.now()
 ): Promise<PollResult> {
   const redis = getRedisRestConfig();
-  if (redis) {
-    try {
-      return await pollRedisChannel(redis, channel, senderId, since, now);
-    } catch (err) {
-      console.warn("Redis poll fallback to memory:", err);
+  if (!redis) {
+    if (process.env.NODE_ENV === "production") {
+      console.error(
+        `[spaceStore] Missing Redis configuration in production during poll (channel=${channel})`
+      );
+      throw new SpaceStoreError(
+        "Shared signalling store is not configured",
+        "MISSING_CONFIG"
+      );
     }
+    return pollMemoryChannel(channel, senderId, since, now);
   }
-  return pollMemoryChannel(channel, senderId, since, now);
+
+  try {
+    return await pollRedisChannel(redis, channel, senderId, since, now);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "Unknown Redis error";
+    console.error(`[spaceStore] Redis poll failed (channel=${channel}): ${detail}`);
+    if (err instanceof SpaceStoreError) throw err;
+    throw new SpaceStoreError("Shared signalling store unavailable", "REDIS_ERROR");
+  }
 }
 
 export async function postChannel(
@@ -492,12 +536,27 @@ export async function postChannel(
   now = Date.now()
 ): Promise<PostResult> {
   const redis = getRedisRestConfig();
-  if (redis) {
-    try {
-      return await postRedisChannel(redis, channel, senderId, message, now);
-    } catch (err) {
-      console.warn("Redis post fallback to memory:", err);
+  if (!redis) {
+    if (process.env.NODE_ENV === "production") {
+      console.error(
+        `[spaceStore] Missing Redis configuration in production during post (channel=${channel})`
+      );
+      throw new SpaceStoreError(
+        "Shared signalling store is not configured",
+        "MISSING_CONFIG"
+      );
     }
+    return postMemoryChannel(channel, senderId, message, now);
   }
-  return postMemoryChannel(channel, senderId, message, now);
+
+  try {
+    return await postRedisChannel(redis, channel, senderId, message, now);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "Unknown Redis error";
+    console.error(
+      `[spaceStore] Redis post failed (channel=${channel}, type=${message.type}): ${detail}`
+    );
+    if (err instanceof SpaceStoreError) throw err;
+    throw new SpaceStoreError("Shared signalling store unavailable", "REDIS_ERROR");
+  }
 }
