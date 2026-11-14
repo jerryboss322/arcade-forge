@@ -15,15 +15,22 @@ import {
   getThemeCssVars,
 } from "../src/lib/space/officeThemes";
 import { ScreenPositionsStore } from "../src/lib/space/screenPositionsStore";
-import { computeSpatialGain, WebRTCMeshManager } from "../src/lib/space/webrtcMesh";
+import {
+  computeSpatialGain,
+  getIceServers,
+  hasTurnConfiguration,
+  WebRTCMeshManager,
+} from "../src/lib/space/webrtcMesh";
 import { hasActiveVideoFeed } from "../src/components/space/StreamVideo";
 import { GET, POST } from "../src/app/api/space/peers/route";
+import { SpaceSignaling } from "../src/lib/space/signaling";
 import {
   getRedisRestConfig,
   pollChannel,
   pollRedisChannel,
   postChannel,
   postRedisChannel,
+  SpaceStoreError,
 } from "../src/lib/space/spaceStore";
 
 describe("ForgeSpace Virtual Office", () => {
@@ -662,18 +669,18 @@ describe("ForgeSpace Upstash Redis / Vercel KV Store", () => {
     }
   });
 
-  it("falls back to in-memory store when Redis REST fails", async () => {
+  it("throws SpaceStoreError and returns HTTP 503 on Redis failure without falling back to memory", async () => {
     const origFetch = globalThis.fetch;
     const origUrl = process.env.UPSTASH_REDIS_REST_URL;
     const origToken = process.env.UPSTASH_REDIS_REST_TOKEN;
     process.env.UPSTASH_REDIS_REST_URL = "https://unreachable.upstash.io";
-    process.env.UPSTASH_REDIS_REST_TOKEN = "bad-token";
+    process.env.UPSTASH_REDIS_REST_TOKEN = "super-secret-token-value";
     globalThis.fetch = (async () => {
       throw new Error("network down");
     }) as typeof fetch;
 
     try {
-      const channel = `fallback-room-${Date.now()}`;
+      const channel = `no-fallback-room-${Date.now()}`;
       const peer = {
         id: "peer_local",
         name: "LocalUser",
@@ -688,20 +695,138 @@ describe("ForgeSpace Upstash Redis / Vercel KV Store", () => {
         media: { audio: false, video: false, screen: false, speaking: false },
         updatedAt: Date.now(),
       };
-      const posted = await postChannel(channel, peer.id, {
-        type: "peer_join",
-        peer,
-      });
-      expect(posted.success).toBe(true);
 
-      const polled = await pollChannel(channel, "peer_other", 0);
-      expect(polled.peers.some((p) => p.id === peer.id)).toBe(true);
+      await expect(
+        postChannel(channel, peer.id, { type: "peer_join", peer })
+      ).rejects.toBeInstanceOf(SpaceStoreError);
+      await expect(pollChannel(channel, "peer_other", 0)).rejects.toBeInstanceOf(
+        SpaceStoreError
+      );
+
+      const apiPost = await POST(
+        new Request("http://localhost/api/space/peers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            channel,
+            senderId: peer.id,
+            message: { type: "peer_join", peer },
+          }),
+        })
+      );
+      expect(apiPost.status).toBe(503);
+      const postBody = await apiPost.text();
+      expect(postBody).not.toContain("super-secret-token-value");
+      expect(postBody).not.toContain("unreachable.upstash.io");
+
+      const apiGet = await GET(
+        new Request(`http://localhost/api/space/peers?channel=${channel}&senderId=peer_other&since=0`)
+      );
+      expect(apiGet.status).toBe(503);
     } finally {
       globalThis.fetch = origFetch;
       if (origUrl === undefined) delete process.env.UPSTASH_REDIS_REST_URL;
       else process.env.UPSTASH_REDIS_REST_URL = origUrl;
       if (origToken === undefined) delete process.env.UPSTASH_REDIS_REST_TOKEN;
       else process.env.UPSTASH_REDIS_REST_TOKEN = origToken;
+    }
+  });
+
+  it("throws on Redis pipeline command-level errors and pipeline result length mismatches", async () => {
+    const config = {
+      url: "https://redis-mock.upstash.io",
+      token: "secret-token",
+    };
+    const origFetch = globalThis.fetch;
+
+    try {
+      // 1. Individual Redis command error
+      globalThis.fetch = (async () =>
+        new Response(
+          JSON.stringify([
+            { result: [] },
+            { error: "WRONGTYPE Operation against a key holding the wrong kind of value" },
+            { result: "1" },
+          ]),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )) as typeof fetch;
+
+      await expect(
+        pollRedisChannel(config, "cmd-err-room", "peer_a", 0)
+      ).rejects.toThrow("Redis command LRANGE failed");
+
+      // 2. Pipeline length mismatch
+      globalThis.fetch = (async () =>
+        new Response(JSON.stringify([{ result: [] }]), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })) as typeof fetch;
+
+      await expect(
+        pollRedisChannel(config, "mismatch-room", "peer_a", 0)
+      ).rejects.toThrow("length mismatch");
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it("rejects missing Redis configuration in production and uses memory fallback in non-production", async () => {
+    const origNodeEnv = process.env.NODE_ENV;
+    const origVars = {
+      UPSTASH_REDIS_REST_URL: process.env.UPSTASH_REDIS_REST_URL,
+      UPSTASH_REDIS_REST_TOKEN: process.env.UPSTASH_REDIS_REST_TOKEN,
+      KV_REST_API_URL: process.env.KV_REST_API_URL,
+      KV_REST_API_TOKEN: process.env.KV_REST_API_TOKEN,
+    };
+
+    delete process.env.UPSTASH_REDIS_REST_URL;
+    delete process.env.UPSTASH_REDIS_REST_TOKEN;
+    delete process.env.KV_REST_API_URL;
+    delete process.env.KV_REST_API_TOKEN;
+
+    const envObj = process.env as Record<string, string | undefined>;
+
+    try {
+      // Production with missing Redis must fail explicitly (HTTP 503)
+      envObj.NODE_ENV = "production";
+      await expect(pollChannel("prod-missing", "peer_a", 0)).rejects.toMatchObject({
+        code: "MISSING_CONFIG",
+      });
+      const res = await GET(
+        new Request("http://localhost/api/space/peers?channel=prod-missing&senderId=peer_a&since=0")
+      );
+      expect(res.status).toBe(503);
+
+      // Local development / test without Redis falls back to in-memory cleanly
+      envObj.NODE_ENV = "development";
+      const localPeer = {
+        id: "peer_dev",
+        name: "DevUser",
+        avatarColor: "#37E6C4",
+        x: 2,
+        y: 3,
+        dir: "down" as const,
+        isMoving: false,
+        zoneId: "reception",
+        status: "Available",
+        deskClaimed: null,
+        media: { audio: false, video: false, screen: false, speaking: false },
+        updatedAt: Date.now(),
+      };
+      const postRes = await postChannel("dev-room", localPeer.id, {
+        type: "peer_join",
+        peer: localPeer,
+      });
+      expect(postRes.backend).toBe("memory");
+      const pollRes = await pollChannel("dev-room", "peer_other", 0);
+      expect(pollRes.backend).toBe("memory");
+      expect(pollRes.peers.map((p) => p.id)).toEqual(["peer_dev"]);
+    } finally {
+      envObj.NODE_ENV = origNodeEnv;
+      for (const [k, v] of Object.entries(origVars)) {
+        if (v === undefined) delete envObj[k];
+        else envObj[k] = v;
+      }
     }
   });
 
@@ -1009,6 +1134,199 @@ describe("ForgeSpace WebRTC Media & Transceiver Fixes", () => {
         configurable: true,
         value: origNav,
       });
+    }
+  });
+
+  it("restores live webcam track when stopping screen share and preserves Google STUN fallback with multi-URL TURN", async () => {
+    const iceDefault = getIceServers({});
+    expect(iceDefault.length).toBeGreaterThanOrEqual(4);
+    expect(hasTurnConfiguration({})).toBe(false);
+
+    const iceWithTurn = getIceServers({
+      NEXT_PUBLIC_TURN_URLS:
+        "turn:relay.example.com:80, turns:relay.example.com:443?transport=tcp, stun:extra.example.com:3478",
+      NEXT_PUBLIC_TURN_USERNAME: "temp-user",
+      NEXT_PUBLIC_TURN_CREDENTIAL: "temp-cred",
+    });
+    expect(hasTurnConfiguration({ NEXT_PUBLIC_TURN_URLS: "turns:relay.example.com:443" })).toBe(true);
+    const turnEntry = iceWithTurn.find((s) =>
+      Array.isArray(s.urls) ? s.urls.some((u) => u.startsWith("turn")) : String(s.urls).startsWith("turn")
+    );
+    expect(turnEntry).toEqual({
+      urls: ["turn:relay.example.com:80", "turns:relay.example.com:443?transport=tcp"],
+      username: "temp-user",
+      credential: "temp-cred",
+    });
+
+    // Verify stopping screen share restores the live webcam track across connected peers
+    const origPC = globalThis.RTCPeerConnection;
+    const origDesc = globalThis.RTCSessionDescription;
+    const origNav = globalThis.navigator;
+    const origStream = globalThis.MediaStream;
+
+    const camTrack = { kind: "video", readyState: "live", enabled: true, stop() {} };
+    const screenTrack = { kind: "video", readyState: "live", enabled: true, onended: null, stop() {} };
+    const replacedTracks: unknown[] = [];
+
+    class CamMockPC {
+      signalingState = "stable";
+      connectionState = "new";
+      iceConnectionState = "new";
+      localDescription: unknown = null;
+      remoteDescription: unknown = null;
+      transceivers: Array<{
+        mid: string | null;
+        currentDirection: string;
+        direction: string;
+        sender: { track: unknown; replaceTrack: (t: unknown) => Promise<void> };
+        receiver: { track: { kind: string } };
+      }> = [];
+      createDataChannel() {
+        return {};
+      }
+      getTransceivers() {
+        return this.transceivers;
+      }
+      addTrack(track: { kind: string }) {
+        const entry: (typeof this.transceivers)[number] = {
+          mid: String(this.transceivers.length),
+          currentDirection: "sendrecv",
+          direction: "sendrecv",
+          sender: {
+            track,
+            replaceTrack: async (next: unknown) => {
+              entry.sender.track = next;
+              replacedTracks.push(next);
+            },
+          },
+          receiver: { track: { kind: track.kind } },
+        };
+        this.transceivers.push(entry);
+      }
+      addTransceiver() {
+        return {};
+      }
+      async createOffer() {
+        return { type: "offer", sdp: "mock" };
+      }
+      async setLocalDescription(d: unknown) {
+        this.localDescription = d;
+      }
+      close() {}
+    }
+
+    (globalThis as unknown as Record<string, unknown>).RTCPeerConnection = CamMockPC;
+    (globalThis as unknown as Record<string, unknown>).RTCSessionDescription = class {
+      constructor(public init: unknown) {}
+    };
+    (globalThis as unknown as Record<string, unknown>).MediaStream = class {
+      constructor(private tracks: unknown[] = []) {}
+      getTracks() {
+        return this.tracks;
+      }
+      getAudioTracks() {
+        return this.tracks.filter((t) => (t as { kind: string }).kind === "audio");
+      }
+      getVideoTracks() {
+        return this.tracks.filter((t) => (t as { kind: string }).kind === "video");
+      }
+    };
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {
+        mediaDevices: {
+          getUserMedia: async () => ({
+            getTracks: () => [camTrack],
+            getAudioTracks: () => [],
+            getVideoTracks: () => [camTrack],
+          }),
+          getDisplayMedia: async () => ({
+            getTracks: () => [screenTrack],
+            getAudioTracks: () => [],
+            getVideoTracks: () => [screenTrack],
+          }),
+        },
+      },
+    });
+
+    const mesh = new WebRTCMeshManager(
+      () => {},
+      () => {},
+      () => {},
+      "peer_a"
+    );
+    try {
+      await mesh.initLocalMedia(true, false);
+      await mesh.connectToPeer("peer_z", true);
+      expect(await mesh.toggleScreenShare()).toBe(true);
+      expect(await mesh.toggleScreenShare()).toBe(false);
+      expect(replacedTracks).toEqual([screenTrack, camTrack]);
+    } finally {
+      mesh.destroy();
+      (globalThis as unknown as Record<string, unknown>).RTCPeerConnection = origPC;
+      (globalThis as unknown as Record<string, unknown>).RTCSessionDescription = origDesc;
+      (globalThis as unknown as Record<string, unknown>).MediaStream = origStream;
+      Object.defineProperty(globalThis, "navigator", {
+        configurable: true,
+        value: origNav,
+      });
+    }
+  });
+
+  it("keeps SpaceSignaling send queue alive after an HTTP 503 failure", async () => {
+    const origWindow = globalThis.window;
+    const origFetch = globalThis.fetch;
+    let callCount = 0;
+
+    (globalThis as unknown as Record<string, unknown>).window = {
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    };
+    globalThis.fetch = (async (_url: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        callCount += 1;
+        if (callCount === 1) {
+          return new Response(JSON.stringify({ error: "Shared signalling store unavailable" }), {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
+          });
+        }
+        return new Response(JSON.stringify({ success: true, seq: callCount, backend: "redis" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      return new Response(
+        JSON.stringify({ messages: [], peers: [], cursor: 0, serverTime: Date.now(), backend: "redis" }),
+        { status: 200, headers: { "Content-Type": "application/json" } }
+      );
+    }) as typeof fetch;
+
+    const localPeer = {
+      id: "peer_queue_a",
+      name: "QueueUser",
+      avatarColor: "#37E6C4",
+      x: 5,
+      y: 5,
+      dir: "down" as const,
+      isMoving: false,
+      zoneId: "reception",
+      status: "Focusing",
+      deskClaimed: null,
+      media: { audio: true, video: true, screen: false, speaking: false },
+      updatedAt: Date.now(),
+    };
+
+    const sig = new SpaceSignaling("queue-test", localPeer, () => {});
+    try {
+      // First POST fails with 503 (peer_join in constructor), second POST must still run!
+      sig.sendSignal("peer_queue_b", { sdp: { type: "offer", sdp: "mock" } });
+      await new Promise((r) => setTimeout(r, 30));
+      expect(callCount).toBe(2);
+    } finally {
+      sig.destroy();
+      globalThis.fetch = origFetch;
+      (globalThis as unknown as Record<string, unknown>).window = origWindow;
     }
   });
 });
