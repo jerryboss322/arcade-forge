@@ -73,25 +73,59 @@ interface PeerConnectionEntry {
   fallbackTimer?: ReturnType<typeof setTimeout>;
 }
 
-function getIceServers(): RTCIceServer[] {
+export function getIceServers(
+  env: Record<string, string | undefined> = process.env
+): RTCIceServer[] {
   const servers: RTCIceServer[] = [
     { urls: "stun:stun.l.google.com:19302" },
     { urls: "stun:stun1.l.google.com:19302" },
     { urls: "stun:stun2.l.google.com:19302" },
     { urls: "stun:stun3.l.google.com:19302" },
   ];
-  const turnUrl = process.env.NEXT_PUBLIC_TURN_URL;
-  if (turnUrl) {
-    const turnServer: RTCIceServer = { urls: turnUrl };
-    if (process.env.NEXT_PUBLIC_TURN_USERNAME) {
-      turnServer.username = process.env.NEXT_PUBLIC_TURN_USERNAME;
+
+  // Supports comma-separated TURN/STUN URLs. Use ONLY short-lived / temporary TURN credentials
+  // in client-visible NEXT_PUBLIC_* variables; never expose permanent TURN API secrets here.
+  const rawTurn = env.NEXT_PUBLIC_TURN_URLS || env.NEXT_PUBLIC_TURN_URL;
+  if (!rawTurn) return servers;
+
+  const parsedUrls = rawTurn
+    .split(",")
+    .map((u) => u.trim())
+    .filter((u) => u.length > 0);
+
+  if (parsedUrls.length === 0) return servers;
+
+  const turnUrls = parsedUrls.filter((u) => /^turns?:/i.test(u));
+  const extraStunUrls = parsedUrls.filter((u) => /^stuns?:/i.test(u));
+
+  if (extraStunUrls.length > 0) {
+    servers.push({ urls: extraStunUrls.length === 1 ? extraStunUrls[0]! : extraStunUrls });
+  }
+
+  if (turnUrls.length > 0) {
+    const turnServer: RTCIceServer = {
+      urls: turnUrls.length === 1 ? turnUrls[0]! : turnUrls,
+    };
+    if (env.NEXT_PUBLIC_TURN_USERNAME) {
+      turnServer.username = env.NEXT_PUBLIC_TURN_USERNAME;
     }
-    if (process.env.NEXT_PUBLIC_TURN_CREDENTIAL) {
-      turnServer.credential = process.env.NEXT_PUBLIC_TURN_CREDENTIAL;
+    if (env.NEXT_PUBLIC_TURN_CREDENTIAL) {
+      turnServer.credential = env.NEXT_PUBLIC_TURN_CREDENTIAL;
     }
     servers.push(turnServer);
   }
+
   return servers;
+}
+
+export function hasTurnConfiguration(
+  env: Record<string, string | undefined> = process.env
+): boolean {
+  const rawTurn = env.NEXT_PUBLIC_TURN_URLS || env.NEXT_PUBLIC_TURN_URL;
+  if (!rawTurn) return false;
+  return rawTurn
+    .split(",")
+    .some((u) => /^turns?:/i.test(u.trim()));
 }
 
 export class WebRTCMeshManager {
@@ -135,6 +169,16 @@ export class WebRTCMeshManager {
         this.audioCtx = new AudioContextClass();
       }
     }
+  }
+
+  private devLog(event: string, detail?: Record<string, unknown>): void {
+    if (process.env.NODE_ENV !== "production") {
+      console.debug("[WebRTC]", event, detail ?? {});
+    }
+  }
+
+  private warnLog(event: string, detail?: Record<string, unknown>): void {
+    console.warn("[WebRTC]", event, detail ?? {});
   }
 
   public setAudioScope(scope: AudioScope): void {
@@ -350,13 +394,16 @@ export class WebRTCMeshManager {
 
   public async toggleScreenShare(): Promise<boolean> {
     void this.resumeAudio();
+    const getLiveCameraTrack = () =>
+      this.localStream?.getVideoTracks().find((t) => t.readyState === "live") ?? null;
+
     if (this.isScreenSharing) {
       if (this.screenStream) {
         this.screenStream.getTracks().forEach((t) => t.stop());
         this.screenStream = null;
       }
       this.isScreenSharing = false;
-      await this.replaceVideoTrackInAllPeers(this.localStream?.getVideoTracks()[0] ?? null);
+      await this.replaceVideoTrackInAllPeers(getLiveCameraTrack());
       return false;
     }
 
@@ -373,13 +420,16 @@ export class WebRTCMeshManager {
         screenTrack.onended = () => {
           this.isScreenSharing = false;
           this.screenStream = null;
-          void this.replaceVideoTrackInAllPeers(this.localStream?.getVideoTracks()[0] ?? null);
+          void this.replaceVideoTrackInAllPeers(getLiveCameraTrack());
         };
       }
 
       await this.replaceVideoTrackInAllPeers(screenTrack ?? null);
       return true;
-    } catch {
+    } catch (err) {
+      this.warnLog("screen_share_failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
       return false;
     }
   }
@@ -405,7 +455,12 @@ export class WebRTCMeshManager {
 
       let needsOffer = false;
       if (videoTransceiver) {
-        await videoTransceiver.sender.replaceTrack(newVideoTrack).catch(() => {});
+        await videoTransceiver.sender.replaceTrack(newVideoTrack).catch((err) => {
+          this.warnLog("replace_video_track_failed", {
+            peerId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        });
         if (
           newVideoTrack &&
           (videoTransceiver.direction === "recvonly" || videoTransceiver.direction === "inactive")
@@ -434,7 +489,11 @@ export class WebRTCMeshManager {
       await entry.pc.setLocalDescription(offer);
       this.sendSignalCb(peerId, { sdp: entry.pc.localDescription });
     } catch (err) {
-      console.warn("Error creating WebRTC offer:", err);
+      this.warnLog("sdp_offer_failed", {
+        peerId,
+        signalingState: entry.pc.signalingState,
+        error: err instanceof Error ? err.message : String(err),
+      });
     } finally {
       entry.makingOffer = false;
     }
@@ -447,9 +506,18 @@ export class WebRTCMeshManager {
   public async connectToPeer(peerId: string, initiator: boolean): Promise<void> {
     if (this.destroyed || this.peers.has(peerId)) return;
 
+    const iceServers = getIceServers();
+    const hasTurn = hasTurnConfiguration();
     const pc = new RTCPeerConnection({
-      iceServers: getIceServers(),
+      iceServers,
       iceCandidatePoolSize: 2,
+    });
+
+    this.devLog("peer_connection_created", {
+      peerId,
+      role: initiator ? "initiator" : "responder",
+      iceServersCount: iceServers.length,
+      hasTurn,
     });
 
     let resolveReady!: () => void;
@@ -489,24 +557,51 @@ export class WebRTCMeshManager {
       }
     };
 
-    const triggerIceRecovery = () => {
-      if (
-        !this.destroyed &&
-        this.peers.get(peerId) === entry &&
-        !entry.restartedIce &&
-        (pc.connectionState === "failed" || pc.iceConnectionState === "failed")
-      ) {
-        entry.restartedIce = true;
-        pc.restartIce?.();
-        if (pc.signalingState === "stable") {
-          void this.sendOffer(peerId, entry);
+    pc.onicegatheringstatechange = () => {
+      this.devLog("ice_gathering_state", {
+        peerId,
+        state: pc.iceGatheringState,
+      });
+    };
+
+    const triggerIceRecovery = (source: "connection" | "ice") => {
+      if (this.destroyed || this.peers.get(peerId) !== entry) return;
+      const state = source === "connection" ? pc.connectionState : pc.iceConnectionState;
+      this.devLog(
+        source === "connection" ? "connection_state" : "ice_connection_state",
+        { peerId, state }
+      );
+
+      if (pc.connectionState === "failed" || pc.iceConnectionState === "failed") {
+        this.warnLog("ice_connection_failed", {
+          peerId,
+          connectionState: pc.connectionState,
+          iceConnectionState: pc.iceConnectionState,
+          hasTurn,
+        });
+        if (!entry.restartedIce) {
+          entry.restartedIce = true;
+          pc.restartIce?.();
+          if (pc.signalingState === "stable") {
+            void this.sendOffer(peerId, entry);
+          }
         }
       }
     };
-    pc.onconnectionstatechange = triggerIceRecovery;
-    pc.oniceconnectionstatechange = triggerIceRecovery;
+    pc.onconnectionstatechange = () => triggerIceRecovery("connection");
+    pc.oniceconnectionstatechange = () => triggerIceRecovery("ice");
 
     pc.ontrack = (event) => {
+      this.devLog(
+        event.track.kind === "audio" ? "remote_audio_track" : "remote_video_track",
+        {
+          peerId,
+          kind: event.track.kind,
+          readyState: event.track.readyState,
+          muted: event.track.muted,
+        }
+      );
+
       let combinedStream = entry.remoteStream;
       if (!combinedStream) {
         combinedStream = event.streams[0] || new MediaStream();
@@ -610,7 +705,12 @@ export class WebRTCMeshManager {
         if (peerObj.pendingCandidates.length > 0) {
           const buffered = peerObj.pendingCandidates.splice(0);
           for (const candidateInit of buffered) {
-            await pc.addIceCandidate(new RTCIceCandidate(candidateInit)).catch(() => {});
+            await pc.addIceCandidate(new RTCIceCandidate(candidateInit)).catch((err) => {
+              this.warnLog("ice_candidate_buffered_failed", {
+                peerId: fromPeerId,
+                error: err instanceof Error ? err.message : String(err),
+              });
+            });
           }
         }
 
@@ -624,11 +724,21 @@ export class WebRTCMeshManager {
         if (!pc.remoteDescription) {
           peerObj.pendingCandidates.push(signal.candidate);
         } else {
-          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate)).catch(() => {});
+          await pc.addIceCandidate(new RTCIceCandidate(signal.candidate)).catch((err) => {
+            this.warnLog("ice_candidate_failed", {
+              peerId: fromPeerId,
+              error: err instanceof Error ? err.message : String(err),
+            });
+          });
         }
       }
     } catch (err) {
-      console.warn("Signal error:", err);
+      this.warnLog("sdp_signal_failed", {
+        peerId: fromPeerId,
+        signalType: signal?.sdp?.type ?? (signal?.candidate ? "candidate" : "unknown"),
+        signalingState: pc.signalingState,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
