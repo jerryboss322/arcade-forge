@@ -7,7 +7,7 @@ import {
   screenPositionsStore,
 } from "@/lib/space/screenPositionsStore";
 import { IconMicOff } from "@/components/space/SpaceIcons";
-import { hasActiveVideoFeed, StreamVideo } from "@/components/space/StreamVideo";
+import { hasAttachedVideoTrack, StreamVideo } from "@/components/space/StreamVideo";
 
 interface FloatingVideoBubblesProps {
   peers: PeerState[];
@@ -34,7 +34,20 @@ const FloatingBubble = memo(function FloatingBubble({
   onBubbleClick?: (peer: PeerState) => void;
 }) {
   const elRef = useRef<HTMLDivElement | null>(null);
-  const hasLiveVideo = hasActiveVideoFeed(stream, peer.media, isLocal);
+  const hasVideoTrack = hasAttachedVideoTrack(stream, peer.media);
+  const avatarFallback = (
+    <div
+      className="w-full h-full flex flex-col items-center justify-center bg-surface"
+      style={{ backgroundColor: `${peer.avatarColor}22` }}
+    >
+      <span
+        className="w-7 h-7 rounded-full flex items-center justify-center font-display text-xs font-bold text-white shadow-sm"
+        style={{ backgroundColor: peer.avatarColor }}
+      >
+        {peer.name.slice(0, 2).toUpperCase()}
+      </span>
+    </div>
+  );
 
   const applyPosition = (pos?: ScreenPosition) => {
     const el = elRef.current;
@@ -84,20 +97,14 @@ const FloatingBubble = memo(function FloatingBubble({
               : "border-border"
         }`}
       >
-        {hasLiveVideo && stream ? (
-          <StreamVideo stream={stream} mirror={isLocal} />
+        {hasVideoTrack && stream ? (
+          <StreamVideo
+            stream={stream}
+            mirror={isLocal && !peer.media.screen}
+            fallback={avatarFallback}
+          />
         ) : (
-          <div
-            className="w-full h-full flex flex-col items-center justify-center"
-            style={{ backgroundColor: `${peer.avatarColor}22` }}
-          >
-            <span
-              className="w-7 h-7 rounded-full flex items-center justify-center font-display text-xs font-bold text-white shadow-sm"
-              style={{ backgroundColor: peer.avatarColor }}
-            >
-              {peer.name.slice(0, 2).toUpperCase()}
-            </span>
-          </div>
+          avatarFallback
         )}
 
         {/* Audio Mute Badge */}

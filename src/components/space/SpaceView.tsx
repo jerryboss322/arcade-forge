@@ -15,7 +15,12 @@ import {
   PeerState,
   SignalMessage,
 } from "@/lib/space/signaling";
-import { AudioScope, WebRTCMeshManager } from "@/lib/space/webrtcMesh";
+import {
+  AudioScope,
+  LocalMediaStatus,
+  PeerLinkStatus,
+  WebRTCMeshManager,
+} from "@/lib/space/webrtcMesh";
 import { SpaceCanvas } from "@/components/space/SpaceCanvas";
 import { Space3DCanvas } from "@/components/space/Space3DCanvas";
 import { SpaceControls } from "@/components/space/SpaceControls";
@@ -36,13 +41,18 @@ import {
 } from "@/lib/space/officeThemes";
 import {
   IconCheck,
+  IconFlipCamera,
   IconLink,
   IconMic,
+  IconRefresh,
   IconScreenShare,
   IconUsers,
+  IconVideo,
 } from "@/components/space/SpaceIcons";
 import { FloatingVideoBubbles } from "@/components/space/FloatingVideoBubbles";
 import { VideoDock } from "@/components/space/VideoDock";
+import { CallStageView } from "@/components/space/CallStageView";
+import { hasAttachedVideoTrack, StreamVideo } from "@/components/space/StreamVideo";
 import { LoungeRadioModal } from "@/components/space/LoungeRadioModal";
 import { DeskModal } from "@/components/space/DeskModal";
 import { WhiteboardModal } from "@/components/space/WhiteboardModal";
@@ -86,8 +96,8 @@ export function SpaceView({
   // Tilemap state
   const [map] = useState<OfficeTilemap>(() => createDefaultOfficeMap());
 
-  // 3D / 2D View Mode (defaults to modern 3D Isometric WebGL!)
-  const [viewMode, setViewMode] = useState<"3d" | "2d">("3d");
+  // 3D / 2D / Call View Mode (defaults to modern 3D Isometric WebGL!)
+  const [viewMode, setViewMode] = useState<"3d" | "2d" | "call">("3d");
 
   // Local Peer State (spread reception spawn slightly so joining coworkers don't overlap)
   const [localPeer, setLocalPeer] = useState<PeerState>(() => ({
@@ -110,9 +120,11 @@ export function SpaceView({
     updatedAt: Date.now(),
   }));
 
-  // Remote Peers
+  // Remote Peers & Connection Telemetry
   const [remotePeers, setRemotePeers] = useState<PeerState[]>([]);
   const [streamsMap, setStreamsMap] = useState<Record<string, MediaStream>>({});
+  const [localMediaStatus, setLocalMediaStatus] = useState<LocalMediaStatus | null>(null);
+  const [peerLinkStates, setPeerLinkStates] = useState<Record<string, PeerLinkStatus>>({});
   const [speakingMap, setSpeakingMap] = useState<Record<string, boolean>>({});
   const [chatMessages, setChatMessages] = useState<
     Array<{ id: string; sender: string; text: string; time: string; zoneId?: string }>
@@ -240,10 +252,12 @@ export function SpaceView({
     setIsImmersiveFallback(true);
   }, [isImmersiveFallback]);
 
-  // Toggle Media Controls & Floor Reactions
-  const handleToggleAudio = useCallback(() => {
+  // Toggle Media Controls & Floor Reactions (WhatsApp-style smart recovery + flip camera)
+  const handleToggleAudio = useCallback(async () => {
     void webrtcRef.current?.resumeAudio();
-    const unmuted = webrtcRef.current?.toggleAudio() ?? false;
+    const webrtc = webrtcRef.current;
+    if (!webrtc) return;
+    const unmuted = await webrtc.toggleAudioSmart();
     setLocalPeer((prev) => {
       const nextMedia = { ...prev.media, audio: unmuted };
       signalingRef.current?.updateMedia({ audio: unmuted });
@@ -251,11 +265,34 @@ export function SpaceView({
     });
   }, []);
 
-  const handleToggleVideo = useCallback(() => {
-    const active = webrtcRef.current?.toggleVideo() ?? false;
+  const handleToggleVideo = useCallback(async () => {
+    const webrtc = webrtcRef.current;
+    if (!webrtc) return;
+    const active = await webrtc.toggleVideoSmart();
     setLocalPeer((prev) => {
       const nextMedia = { ...prev.media, video: active };
       signalingRef.current?.updateMedia({ video: active });
+      return { ...prev, media: nextMedia };
+    });
+  }, []);
+
+  const handleSwitchCamera = useCallback(async () => {
+    await webrtcRef.current?.switchCamera();
+  }, []);
+
+  const handleRetryMedia = useCallback(async () => {
+    const status = await webrtcRef.current?.retryMissingMedia();
+    if (!status) return;
+    setLocalPeer((prev) => {
+      const nextMedia = {
+        ...prev.media,
+        audio: status.hasAudio,
+        video: status.hasVideo,
+      };
+      signalingRef.current?.updateMedia({
+        audio: status.hasAudio,
+        video: status.hasVideo,
+      });
       return { ...prev, media: nextMedia };
     });
   }, []);
@@ -482,6 +519,12 @@ export function SpaceView({
             delete next[msg.id];
             return next;
           });
+          setPeerLinkStates((prev) => {
+            if (!(msg.id in prev)) return prev;
+            const next = { ...prev };
+            delete next[msg.id];
+            return next;
+          });
           signalingRef.current?.detachDataChannel(msg.id);
           webrtcRef.current?.disconnectPeer(msg.id);
           break;
@@ -616,6 +659,46 @@ export function SpaceView({
             ? "Peer media connection blocked by a strict network or firewall. Try refreshing."
             : "Cross-network media blocked by NAT/firewall: configure a TURN relay (NEXT_PUBLIC_TURN_URL) in Vercel."
         );
+      },
+      {
+        onLocalMediaChange: ({ stream, status }) => {
+          if (cancelled) return;
+          setLocalMediaStatus(status);
+          if (stream) {
+            setStreamsMap((prev) => ({
+              ...prev,
+              local: stream,
+              [localPeerRef.current.id]: stream,
+            }));
+          }
+          setLocalPeer((prev) => {
+            if (
+              prev.media.audio === status.hasAudio &&
+              prev.media.video === status.hasVideo
+            ) {
+              return prev;
+            }
+            signalingRef.current?.updateMedia({
+              audio: status.hasAudio,
+              video: status.hasVideo,
+            });
+            return {
+              ...prev,
+              media: {
+                ...prev.media,
+                audio: status.hasAudio,
+                video: status.hasVideo,
+              },
+            };
+          });
+        },
+        onPeerStateChange: (peerId, state) => {
+          if (cancelled) return;
+          setPeerLinkStates((prev) => {
+            if (prev[peerId] === state) return prev;
+            return { ...prev, [peerId]: state };
+          });
+        },
       }
     );
 
@@ -681,6 +764,17 @@ export function SpaceView({
         return changed ? next : prev;
       });
       setSpeakingMap((prev) => {
+        let changed = false;
+        const next = { ...prev };
+        for (const id of expiredIds) {
+          if (id in next) {
+            delete next[id];
+            changed = true;
+          }
+        }
+        return changed ? next : prev;
+      });
+      setPeerLinkStates((prev) => {
         let changed = false;
         const next = { ...prev };
         for (const id of expiredIds) {
@@ -979,6 +1073,22 @@ export function SpaceView({
 
           <button
             type="button"
+            onClick={() => setViewMode((m) => (m === "call" ? "3d" : "call"))}
+            aria-pressed={viewMode === "call"}
+            aria-label="Toggle full video call view"
+            title={viewMode === "call" ? "Return to 3D Office" : "Switch to WhatsApp Video Call View"}
+            className={`h-8 px-2.5 text-[11px] backdrop-blur-md border rounded-full flex items-center gap-1.5 font-display font-semibold transition-colors shadow-sm ${
+              viewMode === "call"
+                ? "bg-accent text-bg border-accent"
+                : "bg-surface/75 hover:bg-surface/95 border-border/70 text-text hover:border-accent"
+            }`}
+          >
+            <IconVideo className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{viewMode === "call" ? "Office" : "Call"}</span>
+          </button>
+
+          <button
+            type="button"
             onClick={handleToggleAudioScope}
             aria-pressed={audioScope === "office"}
             aria-label="Office-wide audio mode"
@@ -1040,9 +1150,26 @@ export function SpaceView({
           {copyStatusText}
         </p>
 
-        {/* Floor Canvas World: 3D Isometric WebGL or 2D Top-Down */}
+        {/* Floor Canvas World: 3D Isometric WebGL, 2D Top-Down, or WhatsApp Call Stage */}
         <div className="relative flex-1 w-full min-h-0">
-          {viewMode === "3d" ? (
+          {viewMode === "call" ? (
+            <CallStageView
+              localPeer={localPeer}
+              peers={remotePeers}
+              speakingMap={speakingMap}
+              streamsMap={streamsMap}
+              peerLinkStates={peerLinkStates}
+              localMediaStatus={localMediaStatus}
+              onToggleVideo={() => void handleToggleVideo()}
+              onSwitchCamera={() => void handleSwitchCamera()}
+              onRetryMedia={() => void handleRetryMedia()}
+              onBackToOffice={() => setViewMode("3d")}
+              onWalkToPeer={(peer) => {
+                setViewMode("3d");
+                handleWarpToPeer(peer);
+              }}
+            />
+          ) : viewMode === "3d" ? (
             <Space3DCanvas
               map={map}
               localPeer={localPeer}
@@ -1064,10 +1191,10 @@ export function SpaceView({
           )}
 
           {/* Floating Overhead Avatar Reactions (0 React loop churn) */}
-          <PeerReactionsOverlay reactions={peerReactions} />
+          {viewMode !== "call" && <PeerReactionsOverlay reactions={peerReactions} />}
 
           {/* Desktop Floating Video Heads */}
-          {videoLayout === "floating" && (
+          {viewMode !== "call" && videoLayout === "floating" && (
             <div className="hidden md:block">
               <FloatingVideoBubbles
                 peers={[localPeer, ...remotePeers]}
@@ -1080,17 +1207,40 @@ export function SpaceView({
           )}
 
           {/* Top-Center Active Office Video Strip (auto-appears when coworkers join or Docked mode is set) */}
-          {(videoLayout === "docked" || remotePeers.length > 0) && (
+          {viewMode !== "call" && (videoLayout === "docked" || remotePeers.length > 0) && (
             <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20">
               <VideoDock
                 localPeer={localPeer}
                 nearbyPeers={nearbyPeers}
                 speakingMap={speakingMap}
                 streamsMap={streamsMap}
+                peerLinkStates={peerLinkStates}
                 onSelectPeer={handleWarpToPeer}
+                onSwitchToCallView={() => setViewMode("call")}
               />
             </div>
           )}
+
+          {/* Mobile Self Camera PiP when alone on 3D/2D canvas (so camera preview & Flip Cam always work on phones) */}
+          {viewMode !== "call" &&
+            remotePeers.length === 0 &&
+            videoLayout !== "docked" &&
+            hasAttachedVideoTrack(streamsMap[localPeer.id] || streamsMap["local"], localPeer.media) && (
+              <div className="md:hidden absolute bottom-24 right-3 z-20 w-24 h-32 rounded-2xl overflow-hidden border-2 border-accent/80 bg-surface shadow-arcade">
+                <StreamVideo
+                  stream={(streamsMap[localPeer.id] || streamsMap["local"])!}
+                  mirror={!localPeer.media.screen && localMediaStatus?.cameraFacing !== "environment"}
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleSwitchCamera()}
+                  title="Flip Camera"
+                  className="absolute bottom-1.5 right-1.5 w-6 h-6 rounded-full bg-black/70 text-white flex items-center justify-center border border-white/20"
+                >
+                  <IconFlipCamera className="w-3 h-3" />
+                </button>
+              </div>
+            )}
 
           {/* Coffee Speed Boost Banner */}
           {coffeeBoostNotice && (
@@ -1099,8 +1249,12 @@ export function SpaceView({
             </div>
           )}
 
-          {/* Actionable WebRTC Audio Unlock / ICE Failure / Plan HUD Pills */}
-          {(audioUnlockNeeded || iceFailureNotice || planNotice) && (
+          {/* Actionable WebRTC Audio Unlock / Camera Retry / ICE Failure / Plan HUD Pills */}
+          {(audioUnlockNeeded ||
+            iceFailureNotice ||
+            planNotice ||
+            localMediaStatus?.cameraError ||
+            localMediaStatus?.micError) && (
             <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1.5 max-w-[92vw]">
               {audioUnlockNeeded && (
                 <button
@@ -1115,6 +1269,19 @@ export function SpaceView({
                   <IconMic className="w-3.5 h-3.5" />
                   <span>Tap to enable coworker audio</span>
                 </button>
+              )}
+              {(localMediaStatus?.cameraError || localMediaStatus?.micError) && (
+                <div className="px-3.5 py-1.5 rounded-full bg-amber-500/95 text-black font-display text-[11px] font-semibold shadow-arcade flex items-center gap-2">
+                  <span>{localMediaStatus.cameraError || localMediaStatus.micError}</span>
+                  <button
+                    type="button"
+                    onClick={() => void handleRetryMedia()}
+                    className="px-2 py-0.5 rounded-full bg-black text-amber-300 font-bold flex items-center gap-1"
+                  >
+                    <IconRefresh className="w-3 h-3" />
+                    <span>Retry</span>
+                  </button>
+                </div>
               )}
               {(planNotice || iceFailureNotice) && (
                 <div className="px-3.5 py-1.5 rounded-full bg-amber-500/95 text-black font-display text-[11px] font-semibold shadow-arcade flex items-center gap-2">
@@ -1178,15 +1345,17 @@ export function SpaceView({
               viewMode={viewMode}
               themeId={themeId}
               audioScope={audioScope}
+              showFlipCamera={localPeer.media.video}
               onToggleAudio={handleToggleAudio}
               onToggleVideo={handleToggleVideo}
+              onSwitchCamera={() => void handleSwitchCamera()}
               onToggleScreenShare={handleToggleScreenShare}
               onToggleFullscreen={() => void handleToggleFullscreen()}
               onToggleVideoLayout={() =>
                 setVideoLayout((l) => (l === "floating" ? "docked" : "floating"))
               }
               onToggleViewMode={() =>
-                setViewMode((m) => (m === "3d" ? "2d" : "3d"))
+                setViewMode((m) => (m === "3d" ? "2d" : m === "2d" ? "call" : "3d"))
               }
               onToggleAudioScope={handleToggleAudioScope}
               onCycleTheme={handleCycleTheme}

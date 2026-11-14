@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   createDefaultOfficeMap,
   findPath,
@@ -21,7 +21,10 @@ import {
   hasTurnConfiguration,
   WebRTCMeshManager,
 } from "../src/lib/space/webrtcMesh";
-import { hasActiveVideoFeed } from "../src/components/space/StreamVideo";
+import {
+  hasActiveVideoFeed,
+  hasAttachedVideoTrack,
+} from "../src/components/space/StreamVideo";
 import { GET, POST } from "../src/app/api/space/peers/route";
 import { SpaceSignaling } from "../src/lib/space/signaling";
 import {
@@ -1623,6 +1626,301 @@ describe("Boss/Admin Auth, Passworded Links, Free/Pro Limits & Ephemeral TURN", 
       else process.env.CLOUDFLARE_TURN_TOKEN_ID = prevId;
       if (prevTok === undefined) delete process.env.CLOUDFLARE_TURN_API_TOKEN;
       else process.env.CLOUDFLARE_TURN_API_TOKEN = prevTok;
+    }
+  });
+
+  it("keeps <video> sink attachable while remote track awaits first keyframe (hasAttachedVideoTrack)", () => {
+    const mutedRemoteStream = {
+      getVideoTracks: () => [
+        {
+          id: "vid_1",
+          kind: "video",
+          readyState: "live",
+          enabled: true,
+          muted: true,
+        },
+      ],
+    } as unknown as MediaStream;
+
+    const endedStream = {
+      getVideoTracks: () => [
+        {
+          id: "vid_2",
+          kind: "video",
+          readyState: "ended",
+          enabled: true,
+          muted: false,
+        },
+      ],
+    } as unknown as MediaStream;
+
+    const mediaOn = { audio: true, video: true, screen: false, speaking: false };
+    const mediaOff = { audio: true, video: false, screen: false, speaking: false };
+
+    expect(hasActiveVideoFeed(mutedRemoteStream, mediaOn, false)).toBe(false);
+    expect(hasAttachedVideoTrack(mutedRemoteStream, mediaOn)).toBe(true);
+    expect(hasAttachedVideoTrack(mutedRemoteStream, mediaOff)).toBe(false);
+    expect(hasAttachedVideoTrack(endedStream, mediaOn)).toBe(false);
+  });
+
+  it("serializes concurrent handleSignal calls per peer so ICE candidates wait for setRemoteDescription", async () => {
+    const origPC = globalThis.RTCPeerConnection;
+    const origSdp = globalThis.RTCSessionDescription;
+    const origIce = globalThis.RTCIceCandidate;
+    const origNav = globalThis.navigator;
+    const events: string[] = [];
+
+    class OrderedMockPC {
+      signalingState = "stable";
+      connectionState = "new";
+      iceConnectionState = "new";
+      remoteDescription: unknown = null;
+      localDescription: unknown = null;
+      async setRemoteDescription(sdp: { type: string }) {
+        events.push(`setRemoteDescription:start:${sdp.type}`);
+        await new Promise((res) => setTimeout(res, 20));
+        this.remoteDescription = sdp;
+        this.signalingState = sdp.type === "offer" ? "have-remote-offer" : "stable";
+        events.push(`setRemoteDescription:done:${sdp.type}`);
+      }
+      async addIceCandidate(cand: { candidate: string }) {
+        events.push(`addIceCandidate:hasRemote=${Boolean(this.remoteDescription)}:${cand.candidate}`);
+      }
+      async createAnswer() {
+        return { type: "answer", sdp: "v=0-ans" };
+      }
+      async setLocalDescription(d: unknown) {
+        this.localDescription = d;
+        this.signalingState = "stable";
+        events.push("setLocalDescription:answer");
+      }
+      getTransceivers() {
+        return [];
+      }
+      addTransceiver() {
+        return {
+          mid: "0",
+          direction: "sendrecv",
+          currentDirection: "sendrecv",
+          sender: { track: null, replaceTrack: async () => {} },
+          receiver: { track: { kind: "video" } },
+        };
+      }
+      close() {}
+    }
+
+    (globalThis as unknown as Record<string, unknown>).RTCPeerConnection = OrderedMockPC;
+    (globalThis as unknown as Record<string, unknown>).RTCSessionDescription = function (d: unknown) {
+      return d;
+    };
+    (globalThis as unknown as Record<string, unknown>).RTCIceCandidate = function (c: unknown) {
+      return c;
+    };
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
+
+    const mesh = new WebRTCMeshManager(
+      () => {},
+      () => {},
+      () => {},
+      "peer_z"
+    );
+
+    try {
+      await Promise.all([
+        mesh.handleSignal("peer_a", { sdp: { type: "offer", sdp: "v=0-offer" } }),
+        mesh.handleSignal("peer_a", { candidate: { candidate: "cand1", sdpMid: "0" } }),
+        mesh.handleSignal("peer_a", { candidate: { candidate: "cand2", sdpMid: "0" } }),
+      ]);
+
+      expect(events[0]).toBe("setRemoteDescription:start:offer");
+      expect(events[1]).toBe("setRemoteDescription:done:offer");
+      expect(events).toContain("setLocalDescription:answer");
+      const candEvents = events.filter((e) => e.startsWith("addIceCandidate:"));
+      expect(candEvents).toEqual([
+        "addIceCandidate:hasRemote=true:cand1",
+        "addIceCandidate:hasRemote=true:cand2",
+      ]);
+    } finally {
+      mesh.destroy();
+      (globalThis as unknown as Record<string, unknown>).RTCPeerConnection = origPC;
+      (globalThis as unknown as Record<string, unknown>).RTCSessionDescription = origSdp;
+      (globalThis as unknown as Record<string, unknown>).RTCIceCandidate = origIce;
+      Object.defineProperty(globalThis, "navigator", { configurable: true, value: origNav });
+    }
+  });
+
+  it("recovers camera on demand with OverconstrainedError constraint cascade in toggleVideoSmart", async () => {
+    const origNav = globalThis.navigator;
+    const origStream = globalThis.MediaStream;
+    let constraintCalls = 0;
+
+    class SimpleMediaStream {
+      private tracks: Array<{ kind: string; enabled: boolean; readyState: string }>;
+      constructor(tracks: Array<{ kind: string; enabled: boolean; readyState: string }> = []) {
+        this.tracks = [...tracks];
+      }
+      getTracks() {
+        return this.tracks;
+      }
+      getVideoTracks() {
+        return this.tracks.filter((t) => t.kind === "video");
+      }
+      getAudioTracks() {
+        return this.tracks.filter((t) => t.kind === "audio");
+      }
+      addTrack(t: { kind: string; enabled: boolean; readyState: string }) {
+        this.tracks.push(t);
+      }
+      removeTrack(t: { kind: string; enabled: boolean; readyState: string }) {
+        this.tracks = this.tracks.filter((x) => x !== t);
+      }
+    }
+
+    (globalThis as unknown as Record<string, unknown>).MediaStream = SimpleMediaStream;
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {
+        mediaDevices: {
+          getUserMedia: async () => {
+            constraintCalls++;
+            if (constraintCalls === 1) {
+              const err = new Error("Constraints cannot be satisfied");
+              err.name = "OverconstrainedError";
+              throw err;
+            }
+            return new SimpleMediaStream([
+              {
+                kind: "video",
+                enabled: true,
+                readyState: "live",
+                stop() {},
+                addEventListener() {},
+                removeEventListener() {},
+              } as unknown as { kind: string; enabled: boolean; readyState: string },
+            ]);
+          },
+        },
+      },
+    });
+
+    const mediaUpdates: boolean[] = [];
+    const mesh = new WebRTCMeshManager(
+      () => {},
+      () => {},
+      () => {},
+      "peer_cam",
+      undefined,
+      undefined,
+      {
+        onLocalMediaChange: ({ status }) => {
+          mediaUpdates.push(status.hasVideo);
+        },
+      }
+    );
+
+    try {
+      const enabled = await mesh.toggleVideoSmart();
+      expect(enabled).toBe(true);
+      expect(constraintCalls).toBe(2);
+      expect(mediaUpdates).toContain(true);
+      expect(mesh.getLocalStream()?.getVideoTracks()).toHaveLength(1);
+    } finally {
+      mesh.destroy();
+      (globalThis as unknown as Record<string, unknown>).MediaStream = origStream;
+      Object.defineProperty(globalThis, "navigator", { configurable: true, value: origNav });
+    }
+  });
+
+  it("triggers delayed ICE restart when a peer stays disconnected and emits PeerLinkStatus updates", async () => {
+    vi.useFakeTimers();
+    const origPC = globalThis.RTCPeerConnection;
+    const origNav = globalThis.navigator;
+    let lastPc: {
+      connectionState: string;
+      iceConnectionState: string;
+      signalingState: string;
+      oniceconnectionstatechange?: () => void;
+      restarted: number;
+    } | null = null;
+
+    class DisconnectMockPC {
+      signalingState = "stable";
+      connectionState = "new";
+      iceConnectionState = "new";
+      restarted = 0;
+      oniceconnectionstatechange?: () => void;
+      onconnectionstatechange?: () => void;
+      addTransceiver() {
+        return {
+          mid: null,
+          currentDirection: "recvonly",
+          direction: "recvonly",
+          sender: { track: null, replaceTrack: async () => {} },
+          receiver: { track: { kind: "audio" } },
+        };
+      }
+      getTransceivers() {
+        return [];
+      }
+      createDataChannel() {
+        return {};
+      }
+      async createOffer() {
+        return { type: "offer", sdp: "v=0" };
+      }
+      async setLocalDescription() {}
+      restartIce() {
+        this.restarted++;
+      }
+      close() {}
+    }
+
+    (globalThis as unknown as Record<string, unknown>).RTCPeerConnection = function MockCtor() {
+      const pc = new DisconnectMockPC();
+      lastPc = pc;
+      return pc;
+    };
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
+
+    const states: string[] = [];
+    const mesh = new WebRTCMeshManager(
+      () => {},
+      () => {},
+      () => {},
+      "peer_disc_a",
+      undefined,
+      undefined,
+      {
+        onPeerStateChange: (_peerId, state) => {
+          states.push(state);
+        },
+      }
+    );
+
+    try {
+      await mesh.connectToPeer("peer_disc_b", true);
+      expect(states[0]).toBe("connecting");
+
+      // Quick transient disconnect that recovers inside 3.5s should NOT restart ICE
+      lastPc!.iceConnectionState = "disconnected";
+      lastPc!.oniceconnectionstatechange?.();
+      expect(states).toContain("disconnected");
+      await vi.advanceTimersByTimeAsync(1500);
+      lastPc!.iceConnectionState = "connected";
+      lastPc!.oniceconnectionstatechange?.();
+      await vi.advanceTimersByTimeAsync(3000);
+      expect(lastPc!.restarted).toBe(0);
+
+      // Persistent disconnect (> 3.5s) triggers automatic restartIce()
+      lastPc!.iceConnectionState = "disconnected";
+      lastPc!.oniceconnectionstatechange?.();
+      await vi.advanceTimersByTimeAsync(3600);
+      expect(lastPc!.restarted).toBe(1);
+    } finally {
+      vi.useRealTimers();
+      mesh.destroy();
+      (globalThis as unknown as Record<string, unknown>).RTCPeerConnection = origPC;
+      Object.defineProperty(globalThis, "navigator", { configurable: true, value: origNav });
     }
   });
 });

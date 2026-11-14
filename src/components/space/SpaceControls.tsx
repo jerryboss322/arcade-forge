@@ -12,6 +12,7 @@ import {
   IconCube,
   IconDock,
   IconExpand,
+  IconFlipCamera,
   IconMap,
   IconMic,
   IconMicOff,
@@ -33,11 +34,13 @@ interface SpaceControlsProps {
   screenShareLocked?: boolean;
   isFullscreen: boolean;
   videoLayout: "floating" | "docked";
-  viewMode: "3d" | "2d";
+  viewMode: "3d" | "2d" | "call";
   themeId: OfficeThemeId;
   audioScope: AudioScope;
+  showFlipCamera?: boolean;
   onToggleAudio: () => void;
   onToggleVideo: () => void;
+  onSwitchCamera?: () => void;
   onToggleScreenShare: () => void;
   onToggleFullscreen: () => void;
   onToggleVideoLayout: () => void;
@@ -61,8 +64,10 @@ export function SpaceControls({
   viewMode,
   themeId,
   audioScope,
+  showFlipCamera = false,
   onToggleAudio,
   onToggleVideo,
+  onSwitchCamera,
   onToggleScreenShare,
   onToggleFullscreen,
   onToggleVideoLayout,
@@ -362,6 +367,18 @@ export function SpaceControls({
             {isVideoMuted ? <IconVideoOff className="w-4 h-4" /> : <IconVideo className="w-4 h-4" />}
           </button>
 
+          {showFlipCamera && onSwitchCamera && (
+            <button
+              type="button"
+              onClick={onSwitchCamera}
+              aria-label="Switch camera"
+              title="Flip Front / Back Camera"
+              className="min-w-[2.25rem] min-h-[2.25rem] sm:min-w-[2.375rem] sm:min-h-[2.375rem] rounded-full flex items-center justify-center transition-colors border bg-surface-2/80 text-text border-border/70 hover:border-accent"
+            >
+              <IconFlipCamera className="w-4 h-4" />
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onToggleScreenShare}
@@ -419,15 +436,17 @@ export function SpaceControls({
           <button
             type="button"
             onClick={onToggleViewMode}
-            aria-pressed={viewMode === "3d"}
-            aria-label="3D view"
-            title={`Switch to ${viewMode === "3d" ? "2D Top-Down" : "3D Isometric"} View`}
+            aria-pressed={viewMode !== "2d"}
+            aria-label="Switch space view"
+            title={`Cycle View: 3D Office / 2D Map / Video Call (current: ${viewMode.toUpperCase()})`}
             className="min-w-[2.25rem] min-h-[2.25rem] sm:min-h-[2.375rem] px-2.5 rounded-full flex items-center gap-1 bg-surface-2/80 hover:bg-surface-2 border border-border/70 hover:border-accent text-text text-[11px] font-display font-bold transition-colors"
           >
             {viewMode === "3d" ? (
               <IconCube className="w-3.5 h-3.5 text-accent" />
-            ) : (
+            ) : viewMode === "2d" ? (
               <IconMap className="w-3.5 h-3.5 text-accent" />
+            ) : (
+              <IconVideo className="w-3.5 h-3.5 text-emerald-400" />
             )}
             <span className="uppercase tracking-wider">{viewMode.toUpperCase()}</span>
           </button>

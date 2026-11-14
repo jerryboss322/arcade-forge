@@ -40,10 +40,35 @@ export function computeSpatialGain({
   return 0.0;
 }
 
+export interface LocalMediaStatus {
+  hasAudio: boolean;
+  hasVideo: boolean;
+  cameraError: string | null;
+  micError: string | null;
+  cameraFacing: "user" | "environment";
+}
+
+export type PeerLinkStatus =
+  | "connecting"
+  | "connected"
+  | "relayed"
+  | "disconnected"
+  | "failed";
+
 export interface LocalMediaInitResult {
   stream: MediaStream | null;
   hasAudio: boolean;
   hasVideo: boolean;
+  cameraError?: string | null;
+  micError?: string | null;
+}
+
+export interface WebRTCMeshOptions {
+  onLocalMediaChange?: (update: {
+    stream: MediaStream | null;
+    status: LocalMediaStatus;
+  }) => void;
+  onPeerStateChange?: (peerId: string, state: PeerLinkStatus) => void;
 }
 
 export interface RemotePeerMedia {
@@ -65,7 +90,9 @@ interface PeerConnectionEntry {
   pendingCandidates: RTCIceCandidateInit[];
   remoteStream: MediaStream | null;
   remoteMedia?: RemotePeerMedia;
-  restartedIce?: boolean;
+  lastIceRestartAt?: number;
+  disconnectTimer?: ReturnType<typeof setTimeout>;
+  signalQueue: Promise<void>;
   makingOffer: boolean;
   initialSyncDone: boolean;
   role: "initiator" | "responder";
@@ -128,6 +155,24 @@ export function hasTurnConfiguration(
     .some((u) => /^turns?:/i.test(u.trim()));
 }
 
+function describeMediaError(err: unknown, kind: "camera" | "microphone"): string {
+  const name = err instanceof Error ? err.name : "";
+  const label = kind === "camera" ? "Camera" : "Microphone";
+  if (name === "NotAllowedError" || name === "PermissionDeniedError") {
+    return `${label} permission denied — allow access in browser settings and retry.`;
+  }
+  if (name === "NotReadableError" || name === "TrackStartError" || name === "AbortError") {
+    return `${label} is in use by another app or tab — close it and tap Retry.`;
+  }
+  if (name === "NotFoundError" || name === "DevicesNotFoundError") {
+    return `No ${kind} device detected.`;
+  }
+  if (name === "OverconstrainedError") {
+    return `${label} hardware rejected requested resolution.`;
+  }
+  return `${label} unavailable on this device.`;
+}
+
 export class WebRTCMeshManager {
   private localStream: MediaStream | null = null;
   private screenStream: MediaStream | null = null;
@@ -140,6 +185,8 @@ export class WebRTCMeshManager {
   private onSpeakingChangeCb: (peerId: string, speaking: boolean) => void;
   private onDataChannelCb?: (peerId: string, channel: RTCDataChannel) => void;
   private onIceFailureCb?: (peerId: string, details: { hasTurn: boolean }) => void;
+  private onLocalMediaChangeCb?: WebRTCMeshOptions["onLocalMediaChange"];
+  private onPeerStateChangeCb?: WebRTCMeshOptions["onPeerStateChange"];
   private localPeerId: string;
   private vadInterval: ReturnType<typeof setInterval> | null = null;
   private audioScope: AudioScope = "office";
@@ -151,6 +198,9 @@ export class WebRTCMeshManager {
   public isAudioMuted = true;
   public isVideoMuted = true;
   public isScreenSharing = false;
+  public cameraFacing: "user" | "environment" = "user";
+  public cameraError: string | null = null;
+  public micError: string | null = null;
 
   constructor(
     sendSignal: (to: string, payload: any) => void,
@@ -158,7 +208,8 @@ export class WebRTCMeshManager {
     onSpeakingChange: (peerId: string, speaking: boolean) => void,
     localPeerId = "",
     onDataChannel?: (peerId: string, channel: RTCDataChannel) => void,
-    onIceFailure?: (peerId: string, details: { hasTurn: boolean }) => void
+    onIceFailure?: (peerId: string, details: { hasTurn: boolean }) => void,
+    options?: WebRTCMeshOptions
   ) {
     this.sendSignalCb = sendSignal;
     this.onRemoteStreamCb = onRemoteStream;
@@ -166,6 +217,8 @@ export class WebRTCMeshManager {
     this.localPeerId = localPeerId;
     this.onDataChannelCb = onDataChannel;
     this.onIceFailureCb = onIceFailure;
+    this.onLocalMediaChangeCb = options?.onLocalMediaChange;
+    this.onPeerStateChangeCb = options?.onPeerStateChange;
 
     if (typeof window !== "undefined") {
       const AudioContextClass =
@@ -263,51 +316,172 @@ export class WebRTCMeshManager {
     return this.localMediaPromise;
   }
 
+  private emitLocalMediaChange(): void {
+    const stream = this.screenStream || this.localStream;
+    const hasAudio = Boolean(
+      this.localStream?.getAudioTracks().some((t) => t.readyState !== "ended" && t.enabled)
+    );
+    const hasVideo = Boolean(
+      this.localStream?.getVideoTracks().some((t) => t.readyState !== "ended" && t.enabled)
+    );
+    this.onLocalMediaChangeCb?.({
+      stream,
+      status: {
+        hasAudio,
+        hasVideo,
+        cameraError: this.cameraError,
+        micError: this.micError,
+        cameraFacing: this.cameraFacing,
+      },
+    });
+  }
+
+  private getVideoConstraints(facing: "user" | "environment"): MediaTrackConstraints[] {
+    return [
+      {
+        facingMode: { ideal: facing },
+        width: { ideal: 640 },
+        height: { ideal: 480 },
+        frameRate: { ideal: 24, max: 30 },
+      },
+      { facingMode: { ideal: facing } },
+      { width: { ideal: 640 }, height: { ideal: 480 } },
+    ];
+  }
+
+  private async captureVideoTrack(facing = this.cameraFacing): Promise<MediaStreamTrack | null> {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      this.cameraError = "Camera API unsupported in this browser.";
+      return null;
+    }
+
+    const attempts: Array<MediaTrackConstraints | boolean> = [
+      ...this.getVideoConstraints(facing),
+      true,
+    ];
+    let lastErr: unknown = null;
+
+    for (const videoOpt of attempts) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: videoOpt,
+          audio: false,
+        });
+        const track = stream.getVideoTracks()[0] ?? null;
+        if (track) {
+          this.cameraError = null;
+          this.attachTrackEndedListener(track, "video");
+          return track;
+        }
+      } catch (err) {
+        lastErr = err;
+        const name = err instanceof Error ? err.name : "";
+        if (name === "NotAllowedError" || name === "PermissionDeniedError" || name === "NotFoundError") {
+          break;
+        }
+      }
+    }
+
+    this.cameraError = describeMediaError(lastErr, "camera");
+    return null;
+  }
+
+  private async captureAudioTrack(): Promise<MediaStreamTrack | null> {
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+      this.micError = "Microphone API unsupported in this browser.";
+      return null;
+    }
+    const attempts: Array<MediaTrackConstraints | boolean> = [
+      { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      true,
+    ];
+    let lastErr: unknown = null;
+
+    for (const audioOpt of attempts) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: audioOpt,
+          video: false,
+        });
+        const track = stream.getAudioTracks()[0] ?? null;
+        if (track) {
+          this.micError = null;
+          this.attachTrackEndedListener(track, "audio");
+          return track;
+        }
+      } catch (err) {
+        lastErr = err;
+        const name = err instanceof Error ? err.name : "";
+        if (name === "NotAllowedError" || name === "PermissionDeniedError" || name === "NotFoundError") {
+          break;
+        }
+      }
+    }
+
+    this.micError = describeMediaError(lastErr, "microphone");
+    return null;
+  }
+
+  private attachTrackEndedListener(track: MediaStreamTrack, kind: "audio" | "video"): void {
+    if (typeof track.addEventListener !== "function") return;
+    track.addEventListener("ended", () => {
+      if (this.destroyed) return;
+      if (kind === "video") {
+        this.isVideoMuted = true;
+        this.cameraError = "Camera disconnected — tap Retry to reconnect.";
+      } else {
+        this.isAudioMuted = true;
+        this.micError = "Microphone disconnected — tap Retry to reconnect.";
+      }
+      this.emitLocalMediaChange();
+    });
+  }
+
+  private setupLocalAnalyser(stream: MediaStream): void {
+    if (!this.audioCtx || stream.getAudioTracks().length === 0) return;
+    try {
+      const source = this.audioCtx.createMediaStreamSource(stream);
+      this.localAnalyser = this.audioCtx.createAnalyser();
+      this.localAnalyser.fftSize = 256;
+      source.connect(this.localAnalyser);
+    } catch {
+      // Safe fallback if AudioContext source fails
+    }
+  }
+
   private async acquireLocalMedia(video: boolean, audio: boolean): Promise<LocalMediaInitResult> {
     if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
       this.startVoiceActivityDetection();
-      return { stream: null, hasAudio: false, hasVideo: false };
+      return { stream: null, hasAudio: false, hasVideo: false, cameraError: null, micError: null };
     }
 
-    const videoConstraint = {
-      width: { ideal: 320 },
-      height: { ideal: 240 },
-      frameRate: { max: 15 },
-    };
+    this.cameraError = null;
+    this.micError = null;
 
     let combined: MediaStream | null = null;
 
     if (video && audio) {
       try {
         combined = await navigator.mediaDevices.getUserMedia({
-          video: videoConstraint,
-          audio: true,
+          video: this.getVideoConstraints(this.cameraFacing)[0]!,
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
         });
+        for (const t of combined.getAudioTracks()) this.attachTrackEndedListener(t, "audio");
+        for (const t of combined.getVideoTracks()) this.attachTrackEndedListener(t, "video");
       } catch {
-        // Fall through to independent device probes
+        // Fall through to independent device probes with constraint fallback
       }
     }
 
     if (!combined) {
       const tracks: MediaStreamTrack[] = [];
       if (audio) {
-        try {
-          const audioStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-          tracks.push(...audioStream.getAudioTracks());
-        } catch {
-          // Mic blocked or absent
-        }
+        const audioTrack = await this.captureAudioTrack();
+        if (audioTrack) tracks.push(audioTrack);
       }
       if (video) {
-        try {
-          const videoStream = await navigator.mediaDevices.getUserMedia({
-            video: videoConstraint,
-            audio: false,
-          });
-          tracks.push(...videoStream.getVideoTracks());
-        } catch {
-          // Webcam locked by another tab or absent
-        }
+        const videoTrack = await this.captureVideoTrack(this.cameraFacing);
+        if (videoTrack) tracks.push(videoTrack);
       }
       if (tracks.length > 0) {
         combined = new MediaStream(tracks);
@@ -325,20 +499,20 @@ export class WebRTCMeshManager {
     this.isAudioMuted = !hasAudio;
     this.isVideoMuted = !hasVideo;
 
-    if (this.audioCtx && hasAudio && combined) {
-      try {
-        const source = this.audioCtx.createMediaStreamSource(combined);
-        this.localAnalyser = this.audioCtx.createAnalyser();
-        this.localAnalyser.fftSize = 256;
-        source.connect(this.localAnalyser);
-      } catch {
-        // Safe fallback if AudioContext source fails
-      }
+    if (combined) {
+      this.setupLocalAnalyser(combined);
     }
 
     this.startVoiceActivityDetection();
     await this.syncExistingPeersMedia();
-    return { stream: combined, hasAudio, hasVideo };
+    this.emitLocalMediaChange();
+    return {
+      stream: combined,
+      hasAudio,
+      hasVideo,
+      cameraError: this.cameraError,
+      micError: this.micError,
+    };
   }
 
   private async syncExistingPeersMedia(): Promise<void> {
@@ -366,8 +540,10 @@ export class WebRTCMeshManager {
     for (const kind of ["audio", "video"] as const) {
       const track =
         kind === "video"
-          ? this.screenStream?.getVideoTracks()[0] ?? this.localStream?.getVideoTracks()[0] ?? null
-          : this.localStream?.getAudioTracks()[0] ?? null;
+          ? this.screenStream?.getVideoTracks().find((t) => t.readyState !== "ended") ??
+            this.localStream?.getVideoTracks().find((t) => t.readyState !== "ended") ??
+            null
+          : this.localStream?.getAudioTracks().find((t) => t.readyState !== "ended") ?? null;
 
       const matchingTransceivers = pc
         .getTransceivers()
@@ -430,10 +606,143 @@ export class WebRTCMeshManager {
     return !this.isVideoMuted;
   }
 
+  /**
+   * WhatsApp-style smart mic toggle: re-acquires microphone on demand if initially blocked or busy.
+   */
+  public async toggleAudioSmart(): Promise<boolean> {
+    void this.resumeAudio();
+    const existing = this.localStream?.getAudioTracks().find((t) => t.readyState !== "ended");
+    if (existing) {
+      existing.enabled = !existing.enabled;
+      this.isAudioMuted = !existing.enabled;
+      this.emitLocalMediaChange();
+      return !this.isAudioMuted;
+    }
+
+    const fresh = await this.captureAudioTrack();
+    if (!fresh) {
+      this.isAudioMuted = true;
+      this.emitLocalMediaChange();
+      return false;
+    }
+
+    const retained = this.localStream?.getVideoTracks().filter((t) => t.readyState !== "ended") ?? [];
+    this.localStream = new MediaStream([fresh, ...retained]);
+    this.isAudioMuted = false;
+    this.setupLocalAnalyser(this.localStream);
+    await this.syncExistingPeersMedia();
+    this.emitLocalMediaChange();
+    return true;
+  }
+
+  /**
+   * WhatsApp-style smart camera toggle: re-acquires camera on demand if initially busy/denied/unplugged.
+   */
+  public async toggleVideoSmart(): Promise<boolean> {
+    void this.resumeAudio();
+    const existing = this.localStream?.getVideoTracks().find((t) => t.readyState !== "ended");
+    if (existing) {
+      existing.enabled = !existing.enabled;
+      this.isVideoMuted = !existing.enabled;
+      if (!this.isScreenSharing) {
+        await this.replaceVideoTrackInAllPeers(existing);
+      }
+      this.emitLocalMediaChange();
+      return !this.isVideoMuted;
+    }
+
+    const fresh = await this.captureVideoTrack(this.cameraFacing);
+    if (!fresh) {
+      this.isVideoMuted = true;
+      this.emitLocalMediaChange();
+      return false;
+    }
+
+    const retainedAudio = this.localStream?.getAudioTracks().filter((t) => t.readyState !== "ended") ?? [];
+    this.localStream = new MediaStream([...retainedAudio, fresh]);
+    this.isVideoMuted = false;
+    if (!this.isScreenSharing) {
+      await this.replaceVideoTrackInAllPeers(fresh);
+    }
+    this.emitLocalMediaChange();
+    return true;
+  }
+
+  /**
+   * Flips between front ('user') and back ('environment') camera on phones/tablets during a call.
+   */
+  public async switchCamera(): Promise<boolean> {
+    const nextFacing = this.cameraFacing === "user" ? "environment" : "user";
+    const oldVideoTracks = this.localStream?.getVideoTracks() ?? [];
+    const fresh = await this.captureVideoTrack(nextFacing);
+    if (!fresh) {
+      this.emitLocalMediaChange();
+      return false;
+    }
+
+    this.cameraFacing = nextFacing;
+    for (const t of oldVideoTracks) {
+      try {
+        t.stop();
+      } catch {
+        // Ignore stop errors
+      }
+    }
+
+    const retainedAudio = this.localStream?.getAudioTracks().filter((t) => t.readyState !== "ended") ?? [];
+    this.localStream = new MediaStream([...retainedAudio, fresh]);
+    this.isVideoMuted = false;
+    if (!this.isScreenSharing) {
+      await this.replaceVideoTrackInAllPeers(fresh);
+    }
+    this.emitLocalMediaChange();
+    return true;
+  }
+
+  /**
+   * Retries missing/blocked camera or microphone tracks without dropping active peer connections.
+   */
+  public async retryMissingMedia(): Promise<LocalMediaInitResult> {
+    const hasAudio = Boolean(this.localStream?.getAudioTracks().some((t) => t.readyState !== "ended"));
+    const hasVideo = Boolean(this.localStream?.getVideoTracks().some((t) => t.readyState !== "ended"));
+    const nextTracks: MediaStreamTrack[] = [
+      ...(this.localStream?.getTracks().filter((t) => t.readyState !== "ended") ?? []),
+    ];
+
+    if (!hasAudio) {
+      const audioTrack = await this.captureAudioTrack();
+      if (audioTrack) nextTracks.push(audioTrack);
+    }
+    if (!hasVideo) {
+      const videoTrack = await this.captureVideoTrack(this.cameraFacing);
+      if (videoTrack) nextTracks.push(videoTrack);
+    }
+
+    if (nextTracks.length > 0) {
+      this.localStream = new MediaStream(nextTracks);
+      this.setupLocalAnalyser(this.localStream);
+    }
+
+    const finalAudio = Boolean(this.localStream?.getAudioTracks().some((t) => t.readyState !== "ended"));
+    const finalVideo = Boolean(this.localStream?.getVideoTracks().some((t) => t.readyState !== "ended"));
+    if (finalAudio) this.isAudioMuted = false;
+    if (finalVideo) this.isVideoMuted = false;
+
+    await this.syncExistingPeersMedia();
+    this.emitLocalMediaChange();
+    return {
+      stream: this.localStream,
+      hasAudio: finalAudio,
+      hasVideo: finalVideo,
+      cameraError: this.cameraError,
+      micError: this.micError,
+    };
+  }
+
   public async toggleScreenShare(): Promise<boolean> {
     void this.resumeAudio();
     const getLiveCameraTrack = () =>
-      this.localStream?.getVideoTracks().find((t) => t.readyState === "live") ?? null;
+      this.localStream?.getVideoTracks().find((t) => t.readyState !== "ended") ?? null;
 
     if (this.isScreenSharing) {
       if (this.screenStream) {
@@ -442,6 +751,7 @@ export class WebRTCMeshManager {
       }
       this.isScreenSharing = false;
       await this.replaceVideoTrackInAllPeers(getLiveCameraTrack());
+      this.emitLocalMediaChange();
       return false;
     }
 
@@ -459,10 +769,12 @@ export class WebRTCMeshManager {
           this.isScreenSharing = false;
           this.screenStream = null;
           void this.replaceVideoTrackInAllPeers(getLiveCameraTrack());
+          this.emitLocalMediaChange();
         };
       }
 
       await this.replaceVideoTrackInAllPeers(screenTrack ?? null);
+      this.emitLocalMediaChange();
       return true;
     } catch (err) {
       this.warnLog("screen_share_failed", {
@@ -567,12 +879,14 @@ export class WebRTCMeshManager {
       pc,
       pendingCandidates: [],
       remoteStream: null,
+      signalQueue: Promise.resolve(),
       makingOffer: false,
       initialSyncDone: false,
       role: initiator ? "initiator" : "responder",
       readyPromise,
     };
     this.peers.set(peerId, entry);
+    this.onPeerStateChangeCb?.(peerId, "connecting");
 
     if (initiator) {
       try {
@@ -602,29 +916,120 @@ export class WebRTCMeshManager {
       });
     };
 
+    const clearDisconnectTimer = () => {
+      if (entry.disconnectTimer) {
+        clearTimeout(entry.disconnectTimer);
+        entry.disconnectTimer = undefined;
+      }
+    };
+
+    const requestIceRestart = (reason: "disconnected" | "failed") => {
+      if (this.destroyed || this.peers.get(peerId) !== entry) return;
+      const now = Date.now();
+      if (entry.lastIceRestartAt && now - entry.lastIceRestartAt < 5000) {
+        return;
+      }
+      entry.lastIceRestartAt = now;
+      this.devLog("ice_restart_triggered", { peerId, reason, hasTurn });
+      pc.restartIce?.();
+      if (pc.signalingState === "stable") {
+        void this.sendOffer(peerId, entry);
+      }
+    };
+
+    const inspectConnectedTransport = () => {
+      if (typeof pc.getStats !== "function") return;
+      void pc
+        .getStats()
+        .then((stats) => {
+          if (this.destroyed || this.peers.get(peerId) !== entry) return;
+          if (
+            pc.connectionState !== "connected" &&
+            pc.iceConnectionState !== "connected" &&
+            pc.iceConnectionState !== "completed"
+          ) {
+            return;
+          }
+          let isRelayed = false;
+          stats.forEach((report: any) => {
+            if (
+              report.type === "candidate-pair" &&
+              (report.nominated || report.state === "succeeded") &&
+              report.localCandidateId
+            ) {
+              const localCand = stats.get?.(report.localCandidateId) as
+                | { candidateType?: string }
+                | undefined;
+              const remoteCand = report.remoteCandidateId
+                ? (stats.get?.(report.remoteCandidateId) as { candidateType?: string } | undefined)
+                : undefined;
+              if (
+                localCand?.candidateType === "relay" ||
+                remoteCand?.candidateType === "relay"
+              ) {
+                isRelayed = true;
+              }
+            }
+          });
+          this.onPeerStateChangeCb?.(peerId, isRelayed ? "relayed" : "connected");
+        })
+        .catch(() => {});
+    };
+
     const triggerIceRecovery = (source: "connection" | "ice") => {
       if (this.destroyed || this.peers.get(peerId) !== entry) return;
-      const state = source === "connection" ? pc.connectionState : pc.iceConnectionState;
+      const connState = pc.connectionState;
+      const iceState = pc.iceConnectionState;
+      const state = source === "connection" ? connState : iceState;
       this.devLog(
         source === "connection" ? "connection_state" : "ice_connection_state",
         { peerId, state }
       );
 
-      if (pc.connectionState === "failed" || pc.iceConnectionState === "failed") {
+      if (connState === "failed" || iceState === "failed") {
+        clearDisconnectTimer();
+        this.onPeerStateChangeCb?.(peerId, "failed");
         this.warnLog("ice_connection_failed", {
           peerId,
-          connectionState: pc.connectionState,
-          iceConnectionState: pc.iceConnectionState,
+          connectionState: connState,
+          iceConnectionState: iceState,
           hasTurn,
         });
         this.onIceFailureCb?.(peerId, { hasTurn });
-        if (!entry.restartedIce) {
-          entry.restartedIce = true;
-          pc.restartIce?.();
-          if (pc.signalingState === "stable") {
-            void this.sendOffer(peerId, entry);
-          }
+        requestIceRestart("failed");
+        return;
+      }
+
+      if (connState === "disconnected" || iceState === "disconnected") {
+        this.onPeerStateChangeCb?.(peerId, "disconnected");
+        if (!entry.disconnectTimer) {
+          entry.disconnectTimer = setTimeout(() => {
+            entry.disconnectTimer = undefined;
+            if (this.destroyed || this.peers.get(peerId) !== entry) return;
+            if (
+              pc.connectionState === "disconnected" ||
+              pc.iceConnectionState === "disconnected"
+            ) {
+              requestIceRestart("disconnected");
+            }
+          }, 3500);
         }
+        return;
+      }
+
+      if (
+        connState === "connected" ||
+        iceState === "connected" ||
+        iceState === "completed"
+      ) {
+        clearDisconnectTimer();
+        this.onPeerStateChangeCb?.(peerId, "connected");
+        inspectConnectedTransport();
+        return;
+      }
+
+      if (connState !== "closed" && iceState !== "closed") {
+        this.onPeerStateChangeCb?.(peerId, "connecting");
       }
     };
     pc.onconnectionstatechange = () => triggerIceRecovery("connection");
@@ -658,7 +1063,7 @@ export class WebRTCMeshManager {
         if (this.destroyed || this.peers.get(peerId) !== entry || !entry.remoteStream) return;
         this.onRemoteStreamCb(
           peerId,
-          new MediaStream(entry.remoteStream.getTracks()),
+          entry.remoteStream,
           Boolean(entry.remoteMedia?.isSpeaking)
         );
       };
@@ -742,6 +1147,18 @@ export class WebRTCMeshManager {
     const peerObj = this.peers.get(fromPeerId);
     if (!peerObj) return;
 
+    peerObj.signalQueue = peerObj.signalQueue
+      .catch(() => {})
+      .then(() => this.processSignal(fromPeerId, peerObj, signal));
+
+    return peerObj.signalQueue;
+  }
+
+  private async processSignal(
+    fromPeerId: string,
+    peerObj: PeerConnectionEntry,
+    signal: any
+  ): Promise<void> {
     await peerObj.readyPromise;
     if (this.destroyed || this.peers.get(fromPeerId) !== peerObj) return;
 
@@ -988,6 +1405,7 @@ export class WebRTCMeshManager {
     const peerObj = this.peers.get(peerId);
     if (peerObj) {
       if (peerObj.fallbackTimer) clearTimeout(peerObj.fallbackTimer);
+      if (peerObj.disconnectTimer) clearTimeout(peerObj.disconnectTimer);
       this.teardownPeerMedia(peerObj.remoteMedia);
       peerObj.pc.close();
       this.peers.delete(peerId);
@@ -999,6 +1417,7 @@ export class WebRTCMeshManager {
     if (this.vadInterval) clearInterval(this.vadInterval);
     for (const [, peerObj] of this.peers) {
       if (peerObj.fallbackTimer) clearTimeout(peerObj.fallbackTimer);
+      if (peerObj.disconnectTimer) clearTimeout(peerObj.disconnectTimer);
       this.teardownPeerMedia(peerObj.remoteMedia);
       peerObj.pc.close();
     }
