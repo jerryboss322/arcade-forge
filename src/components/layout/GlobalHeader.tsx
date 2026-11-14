@@ -48,6 +48,7 @@ export function GlobalHeader() {
 
   const NAV_LINKS = [
     { href: "/spaces", label: "Offices" },
+    { href: "/admin", label: "Boss Admin" },
     { href: "/features", label: "Features" },
     { href: "/whiteboard", label: "Whiteboard" },
     { href: "/schedule", label: "Schedule" },
@@ -217,6 +218,14 @@ export function GlobalHeader() {
           <span>Offices</span>
         </Link>
         <Link
+          href="/admin"
+          className={`flex flex-col items-center justify-center py-1 px-2 text-[11px] font-display font-semibold ${
+            pathname === "/admin" ? "text-accent" : "text-text-muted hover:text-text"
+          }`}
+        >
+          <span>Admin</span>
+        </Link>
+        <Link
           href="/features"
           className={`flex flex-col items-center justify-center py-1 px-2 text-[11px] font-display font-semibold ${
             pathname === "/features" ? "text-accent" : "text-text-muted hover:text-text"
@@ -316,6 +325,16 @@ export function GlobalHeader() {
               <li>Lo-Fi Breakroom Lounge with Espresso Bar</li>
               <li>Collaborative Whiteboard & Screen Sharing</li>
             </ul>
+            <div className="pt-2 border-t border-border/60">
+              Need a password-locked team link with zero employee accounts?{" "}
+              <Link
+                href="/admin"
+                onClick={() => setCreateModalOpen(false)}
+                className="text-accent font-semibold hover:underline"
+              >
+                Create one in Boss Admin →
+              </Link>
+            </div>
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">

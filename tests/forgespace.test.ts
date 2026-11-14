@@ -32,6 +32,23 @@ import {
   postRedisChannel,
   SpaceStoreError,
 } from "../src/lib/space/spaceStore";
+import {
+  BOSS_COOKIE_NAME,
+  SPACE_COOKIE_NAME,
+  createBossToken,
+  grantSpaceAccessToken,
+  hashSecret,
+  hasSpaceAccessToken,
+  verifyBossToken,
+  verifySecret,
+} from "../src/lib/auth";
+import { PLAN_CONFIG, normalizeWorkspaceSlug } from "../src/lib/plans";
+import { verifyStripeSignature } from "../src/lib/billing";
+import {
+  clearWorkspacePolicyCache,
+  syncWorkspacePolicyCache,
+} from "../src/lib/workspacePolicy";
+import { GET as GET_TURN } from "../src/app/api/space/turn/route";
 
 describe("ForgeSpace Virtual Office", () => {
   it("generates 40x26 office tilemap with zones and collision boundaries", () => {
@@ -1411,6 +1428,201 @@ describe("ForgeSpace WebRTC Media & Transceiver Fixes", () => {
         configurable: true,
         value: origNav,
       });
+    }
+  });
+});
+
+describe("Boss/Admin Auth, Passworded Links, Free/Pro Limits & Ephemeral TURN", () => {
+  it("hashes and verifies passcodes securely with per-record random salts", () => {
+    const hash1 = hashSecret("secret-pass-2026");
+    const hash2 = hashSecret("secret-pass-2026");
+    expect(hash1).not.toBe(hash2);
+    expect(verifySecret("secret-pass-2026", hash1)).toBe(true);
+    expect(verifySecret("wrong-pass", hash1)).toBe(false);
+    expect(verifySecret("secret-pass-2026", "malformed")).toBe(false);
+  });
+
+  it("signs and verifies Boss session and multi-slug Employee access tokens", () => {
+    const now = 1_700_000_000_000;
+    const bossToken = createBossToken(
+      { id: "boss_1", email: "boss@acme.dev", username: "acme_boss" },
+      now,
+      "test-secret-key-min-16"
+    );
+    const decoded = verifyBossToken(bossToken, now + 1000, "test-secret-key-min-16");
+    expect(decoded?.userId).toBe("boss_1");
+    expect(verifyBossToken(bossToken, now + 1000, "wrong-secret-key-16")).toBeNull();
+    expect(verifyBossToken(bossToken, now + 8 * 24 * 3600 * 1000, "test-secret-key-min-16")).toBeNull();
+
+    const access1 = grantSpaceAccessToken(undefined, "team-alpha", now, "test-secret-key-min-16");
+    const access2 = grantSpaceAccessToken(access1, "team-beta", now + 10, "test-secret-key-min-16");
+    expect(hasSpaceAccessToken(access2, "team-alpha", now + 1000, "test-secret-key-min-16")).toBe(true);
+    expect(hasSpaceAccessToken(access2, "team-beta", now + 1000, "test-secret-key-min-16")).toBe(true);
+    expect(hasSpaceAccessToken(access2, "team-gamma", now + 1000, "test-secret-key-min-16")).toBe(false);
+  });
+
+  it("defines distinct FREE (limited) vs PRO entitlements and normalizes slugs", () => {
+    expect(PLAN_CONFIG.FREE.maxWorkspaces).toBe(1);
+    expect(PLAN_CONFIG.FREE.maxParticipants).toBe(4);
+    expect(PLAN_CONFIG.FREE.allowScreenShare).toBe(false);
+
+    expect(PLAN_CONFIG.PRO.maxWorkspaces).toBe(20);
+    expect(PLAN_CONFIG.PRO.maxParticipants).toBe(30);
+    expect(PLAN_CONFIG.PRO.allowScreenShare).toBe(true);
+
+    expect(normalizeWorkspaceSlug("  Acme Engineering HQ!! ")).toBe("acme-engineering-hq");
+  });
+
+  it("enforces passcode gates (401) and Free 4-seat caps (403) on /api/space/peers", async () => {
+    const slug = `team-gate-${Date.now()}`;
+    const channel = `forgespace_${slug}`;
+    await syncWorkspacePolicyCache({
+      slug,
+      name: "Acme Private HQ",
+      ownerId: "boss_owner_1",
+      planTier: "FREE",
+      passcode: "scrypt$abc$def",
+    });
+
+    try {
+      // 1. Unauthenticated employee without room cookie is rejected with 401
+      const unauthGet = await GET(
+        new Request(`http://localhost/api/space/peers?channel=${channel}&senderId=emp_1&since=0`)
+      );
+      expect(unauthGet.status).toBe(401);
+
+      // 2. Grant room access cookie (employee unlocked via passworded link)
+      const accessToken = grantSpaceAccessToken(undefined, slug);
+      const cookieHeader = `${SPACE_COOKIE_NAME}=${encodeURIComponent(accessToken)}`;
+
+      const makePeer = (id: string) => ({
+        id,
+        name: id,
+        avatarColor: "#37E6C4",
+        x: 5,
+        y: 5,
+        dir: "down" as const,
+        isMoving: false,
+        zoneId: "reception",
+        status: "Focusing",
+        deskClaimed: null,
+        media: { audio: true, video: true, screen: false, speaking: false },
+        updatedAt: Date.now(),
+      });
+
+      // First 4 employees succeed on Free plan (maxParticipants = 4)
+      for (let i = 1; i <= 4; i++) {
+        const res = await POST(
+          new Request("http://localhost/api/space/peers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", cookie: cookieHeader },
+            body: JSON.stringify({
+              channel,
+              senderId: `emp_${i}`,
+              message: { type: "peer_join", peer: makePeer(`emp_${i}`) },
+            }),
+          })
+        );
+        expect(res.status).toBe(200);
+      }
+
+      // 5th employee is blocked with HTTP 403 seat_limit_reached
+      const fifth = await POST(
+        new Request("http://localhost/api/space/peers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", cookie: cookieHeader },
+          body: JSON.stringify({
+            channel,
+            senderId: "emp_5",
+            message: { type: "peer_join", peer: makePeer("emp_5") },
+          }),
+        })
+      );
+      expect(fifth.status).toBe(403);
+      const fifthData = (await fifth.json()) as { code?: string };
+      expect(fifthData.code).toBe("seat_limit_reached");
+
+      // Existing participant emp_1 heartbeat still succeeds at 4/4 capacity
+      const heartbeat = await POST(
+        new Request("http://localhost/api/space/peers", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", cookie: cookieHeader },
+          body: JSON.stringify({
+            channel,
+            senderId: "emp_1",
+            message: { type: "peer_join", peer: makePeer("emp_1") },
+          }),
+        })
+      );
+      expect(heartbeat.status).toBe(200);
+
+      // Boss owner session also passes authorization cleanly without employee cookie
+      const bossToken = createBossToken({
+        id: "boss_owner_1",
+        email: "boss@acme.dev",
+        username: "boss",
+      });
+      const bossGet = await GET(
+        new Request(`http://localhost/api/space/peers?channel=${channel}&senderId=boss_p&since=0`, {
+          headers: { cookie: `${BOSS_COOKIE_NAME}=${encodeURIComponent(bossToken)}` },
+        })
+      );
+      expect(bossGet.status).toBe(200);
+    } finally {
+      await clearWorkspacePolicyCache(slug);
+    }
+  });
+
+  it("verifies Stripe webhook HMAC signatures and supports ephemeral Cloudflare TURN endpoint", async () => {
+    const crypto = await import("node:crypto");
+    const secret = "whsec_test_12345";
+    const payload = JSON.stringify({ type: "checkout.session.completed" });
+    const nowSec = 1_700_000_000;
+    const sigHex = crypto
+      .createHmac("sha256", secret)
+      .update(`${nowSec}.${payload}`)
+      .digest("hex");
+
+    expect(verifyStripeSignature(payload, `t=${nowSec},v1=${sigHex}`, secret, nowSec + 10)).toBe(true);
+    expect(verifyStripeSignature(payload, `t=${nowSec},v1=bad`, secret, nowSec + 10)).toBe(false);
+    expect(verifyStripeSignature(payload, `t=${nowSec},v1=${sigHex}`, secret, nowSec + 500)).toBe(false);
+
+    // /api/space/turn returns STUN fallback when unconfigured and Cloudflare TURN when configured
+    const stunRes = await GET_TURN();
+    expect(stunRes.status).toBe(200);
+    const stunJson = (await stunRes.json()) as { hasTurn: boolean; provider: string };
+    expect(stunJson.hasTurn).toBe(false);
+    expect(stunJson.provider).toBe("stun-only");
+
+    const origFetch = globalThis.fetch;
+    const prevId = process.env.CLOUDFLARE_TURN_TOKEN_ID;
+    const prevTok = process.env.CLOUDFLARE_TURN_API_TOKEN;
+    try {
+      process.env.CLOUDFLARE_TURN_TOKEN_ID = "cf_key_1";
+      process.env.CLOUDFLARE_TURN_API_TOKEN = "cf_secret_1";
+      globalThis.fetch = (async () =>
+        new Response(
+          JSON.stringify({
+            iceServers: [{ urls: ["turn:turn.cloudflare.com:3478"], username: "u", credential: "p" }],
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )) as typeof fetch;
+
+      const cfRes = await GET_TURN();
+      const cfJson = (await cfRes.json()) as {
+        hasTurn: boolean;
+        provider: string;
+        iceServers: Array<{ urls: string | string[] }>;
+      };
+      expect(cfJson.hasTurn).toBe(true);
+      expect(cfJson.provider).toBe("cloudflare");
+      expect(cfJson.iceServers.some((s) => JSON.stringify(s.urls).includes("turn:"))).toBe(true);
+    } finally {
+      globalThis.fetch = origFetch;
+      if (prevId === undefined) delete process.env.CLOUDFLARE_TURN_TOKEN_ID;
+      else process.env.CLOUDFLARE_TURN_TOKEN_ID = prevId;
+      if (prevTok === undefined) delete process.env.CLOUDFLARE_TURN_API_TOKEN;
+      else process.env.CLOUDFLARE_TURN_API_TOKEN = prevTok;
     }
   });
 });

@@ -30,6 +30,7 @@ interface SpaceControlsProps {
   isAudioMuted: boolean;
   isVideoMuted: boolean;
   isScreenSharing: boolean;
+  screenShareLocked?: boolean;
   isFullscreen: boolean;
   videoLayout: "floating" | "docked";
   viewMode: "3d" | "2d";
@@ -54,6 +55,7 @@ export function SpaceControls({
   isAudioMuted,
   isVideoMuted,
   isScreenSharing,
+  screenShareLocked = false,
   isFullscreen,
   videoLayout,
   viewMode,
@@ -365,14 +367,27 @@ export function SpaceControls({
             onClick={onToggleScreenShare}
             aria-pressed={isScreenSharing}
             aria-label="Share screen"
-            title={isScreenSharing ? "Stop Sharing Screen" : "Share Screen"}
-            className={`min-w-[2.25rem] min-h-[2.25rem] sm:min-w-[2.375rem] sm:min-h-[2.375rem] rounded-full flex items-center justify-center transition-colors border ${
+            title={
+              screenShareLocked
+                ? "Share Screen (Boss Pro feature)"
+                : isScreenSharing
+                  ? "Stop Sharing Screen"
+                  : "Share Screen"
+            }
+            className={`relative min-w-[2.25rem] min-h-[2.25rem] sm:min-w-[2.375rem] sm:min-h-[2.375rem] rounded-full flex items-center justify-center transition-colors border ${
               isScreenSharing
                 ? "bg-accent text-bg border-accent shadow-sm"
-                : "bg-surface-2/80 text-text border-border/70 hover:border-accent"
+                : screenShareLocked
+                  ? "bg-surface-2/60 text-text-muted border-border/50 hover:border-amber-400/70"
+                  : "bg-surface-2/80 text-text border-border/70 hover:border-accent"
             }`}
           >
             <IconScreenShare className="w-4 h-4" />
+            {screenShareLocked && (
+              <span className="absolute -top-1.5 -right-1.5 px-1 py-0.2 rounded-full bg-amber-500 text-black text-[8px] font-display font-extrabold leading-tight">
+                PRO
+              </span>
+            )}
           </button>
         </div>
 

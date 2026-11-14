@@ -132,12 +132,20 @@ export default function SpacesPage() {
           </p>
         </div>
 
-        <button
-          onClick={() => setCreateModalOpen(true)}
-          className="px-5 py-2.5 bg-accent text-bg font-display font-bold text-xs md:text-sm rounded-control shadow-arcade hover:brightness-110 active:scale-95 transition-all self-start md:self-auto flex items-center gap-1.5"
-        >
-          <span>+ Create Custom Space</span>
-        </button>
+        <div className="flex flex-wrap items-center gap-2 self-start md:self-auto">
+          <Link
+            href="/admin"
+            className="px-4 py-2.5 bg-surface-2 border border-border hover:border-accent text-text font-display font-bold text-xs md:text-sm rounded-control transition-all"
+          >
+            Boss Admin (Passworded Link) →
+          </Link>
+          <button
+            onClick={() => setCreateModalOpen(true)}
+            className="px-5 py-2.5 bg-accent text-bg font-display font-bold text-xs md:text-sm rounded-control shadow-arcade hover:brightness-110 active:scale-95 transition-all flex items-center gap-1.5"
+          >
+            <span>+ Quick Demo Space</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter & Search Bar */}

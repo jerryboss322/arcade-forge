@@ -560,3 +560,131 @@ export async function postChannel(
     throw new SpaceStoreError("Shared signalling store unavailable", "REDIS_ERROR");
   }
 }
+
+function policyRedisKey(slug: string): string {
+  return `space:policy:${slug}`;
+}
+
+const globalPolicyCache = globalThis as typeof globalThis & {
+  __forgespacePolicies?: Map<string, { value: unknown; expiresAt: number }>;
+};
+const memoryPolicies =
+  globalPolicyCache.__forgespacePolicies ??
+  (globalPolicyCache.__forgespacePolicies = new Map<string, { value: unknown; expiresAt: number }>());
+
+/**
+ * Counts currently active peers in a signaling channel excluding `excludePeerId`.
+ * Used on `peer_join` to enforce Free/Pro workspace participant caps cleanly.
+ */
+export async function getActivePeerCount(
+  channel: string,
+  excludePeerId?: string,
+  now = Date.now()
+): Promise<number> {
+  const redis = getRedisRestConfig();
+  if (!redis) {
+    if (process.env.NODE_ENV === "production") {
+      throw new SpaceStoreError("Shared signalling store is not configured", "MISSING_CONFIG");
+    }
+    pruneMemoryChannels(now);
+    const ch = memoryChannels.get(channel);
+    if (!ch) return 0;
+    let count = 0;
+    for (const [id, entry] of ch.peers.entries()) {
+      if (id !== excludePeerId && now - entry.updatedAt <= PEER_TTL_MS) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  const { peersKey: channelPeersKey } = channelKeys(channel);
+  let results: Array<{ result?: unknown; error?: string }>;
+  try {
+    results = await runRedisPipeline(redis, [["HGETALL", channelPeersKey]]);
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : "Unknown Redis error";
+    console.error(`[spaceStore] Redis peer count failed (channel=${channel}): ${detail}`);
+    if (err instanceof SpaceStoreError) throw err;
+    throw new SpaceStoreError("Shared signalling store unavailable", "REDIS_ERROR");
+  }
+  const rawHash = results[0]?.result;
+  let count = 0;
+
+  const checkEntry = (id: string, rawVal: string) => {
+    if (id === excludePeerId) return;
+    try {
+      const parsed = JSON.parse(rawVal) as CachedPeerEntry;
+      if (parsed && now - parsed.updatedAt <= PEER_TTL_MS) {
+        count += 1;
+      }
+    } catch {
+      // Ignore malformed entry
+    }
+  };
+
+  if (Array.isArray(rawHash)) {
+    for (let i = 0; i < rawHash.length; i += 2) {
+      const id = String(rawHash[i] ?? "");
+      const val = String(rawHash[i + 1] ?? "");
+      if (id) checkEntry(id, val);
+    }
+  } else if (rawHash && typeof rawHash === "object") {
+    for (const [id, rawVal] of Object.entries(rawHash as Record<string, unknown>)) {
+      checkEntry(id, String(rawVal ?? ""));
+    }
+  }
+
+  return count;
+}
+
+export async function getCachedSpacePolicy<T>(slug: string, now = Date.now()): Promise<T | null> {
+  const redis = getRedisRestConfig();
+  if (!redis) {
+    const entry = memoryPolicies.get(slug);
+    if (!entry) return null;
+    if (entry.expiresAt <= now) {
+      memoryPolicies.delete(slug);
+      return null;
+    }
+    return entry.value as T;
+  }
+
+  try {
+    const results = await runRedisPipeline(redis, [["GET", policyRedisKey(slug)]]);
+    const raw = results[0]?.result;
+    if (typeof raw !== "string" || !raw) return null;
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
+export async function setCachedSpacePolicy(
+  slug: string,
+  policy: unknown,
+  ttlSec = 180,
+  now = Date.now()
+): Promise<void> {
+  const redis = getRedisRestConfig();
+  if (!redis) {
+    memoryPolicies.set(slug, { value: policy, expiresAt: now + ttlSec * 1000 });
+    return;
+  }
+  try {
+    await runRedisPipeline(redis, [["SETEX", policyRedisKey(slug), ttlSec, JSON.stringify(policy)]]);
+  } catch {
+    // Non-fatal cache write error
+  }
+}
+
+export async function invalidateCachedSpacePolicy(slug: string): Promise<void> {
+  memoryPolicies.delete(slug);
+  const redis = getRedisRestConfig();
+  if (!redis) return;
+  try {
+    await runRedisPipeline(redis, [["DEL", policyRedisKey(slug)]]);
+  } catch {
+    // Non-fatal cache delete error
+  }
+}

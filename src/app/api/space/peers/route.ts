@@ -1,13 +1,26 @@
 import { NextResponse } from "next/server";
 import {
+  getActivePeerCount,
   pollChannel,
   postChannel,
   SpaceStoreError,
 } from "../../../../lib/space/spaceStore";
+import {
+  getBossSessionFromRequest,
+  hasSpaceAccessInRequest,
+} from "../../../../lib/requestAuth";
+import { getSpacePolicy, SpacePolicy } from "../../../../lib/workspacePolicy";
 import type { SignalMessage } from "../../../../lib/space/signaling";
 
 export const dynamic = "force-dynamic";
 export const preferredRegion = "iad1";
+
+function isChannelAuthorized(request: Request, policy: SpacePolicy): boolean {
+  if (!policy.isManaged || !policy.requiresPasscode) return true;
+  if (hasSpaceAccessInRequest(request, policy.slug)) return true;
+  const boss = getBossSessionFromRequest(request);
+  return Boolean(boss && boss.userId === policy.ownerId);
+}
 
 /**
  * GET /api/space/peers?channel=...&senderId=...&since=0
@@ -30,6 +43,14 @@ export async function GET(request: Request) {
   }
 
   try {
+    const policy = await getSpacePolicy(channel);
+    if (!isChannelAuthorized(request, policy)) {
+      return NextResponse.json(
+        { error: "Workspace passcode required", code: "passcode_required" },
+        { status: 401 }
+      );
+    }
+
     const result = await pollChannel(channel, senderId, since);
     return NextResponse.json(result);
   } catch (err) {
@@ -50,6 +71,7 @@ export async function GET(request: Request) {
  * POST /api/space/peers
  * Body: { channel: string, message: SignalMessage, senderId: string }
  * Appends message and/or registers peer heartbeat in the channel store.
+ * Enforces workspace passcode gates (401) and Free/Pro seat caps (403) on join.
  * Returns HTTP 503 when the shared Redis store is unavailable.
  */
 export async function POST(request: Request) {
@@ -81,12 +103,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
+  const msg = rawMessage as SignalMessage;
+
   try {
-    const result = await postChannel(
-      channel,
-      senderId,
-      rawMessage as SignalMessage
-    );
+    const policy = await getSpacePolicy(channel);
+    if (!isChannelAuthorized(request, policy)) {
+      return NextResponse.json(
+        { error: "Workspace passcode required", code: "passcode_required" },
+        { status: 401 }
+      );
+    }
+
+    if (msg.type === "peer_join") {
+      const activeOtherPeers = await getActivePeerCount(channel, senderId);
+      if (activeOtherPeers >= policy.maxParticipants) {
+        return NextResponse.json(
+          {
+            error: `Workspace limit reached (${policy.maxParticipants} max on ${policy.planTier} plan). Ask your admin to upgrade to Boss Pro.`,
+            code: "seat_limit_reached",
+            maxParticipants: policy.maxParticipants,
+          },
+          { status: 403 }
+        );
+      }
+    }
+
+    const result = await postChannel(channel, senderId, msg);
     return NextResponse.json(result);
   } catch (err) {
     if (err instanceof SpaceStoreError) {

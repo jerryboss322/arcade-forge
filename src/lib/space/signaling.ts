@@ -34,10 +34,17 @@ export type SignalMessage =
   | { type: "webrtc_signal"; from: string; to: string; payload: any }
   | { type: "chat"; id: string; sender: string; text: string; time: string; zoneId?: string };
 
+export interface SignalingAccessError {
+  status: number;
+  code?: string;
+  message: string;
+}
+
 export class SpaceSignaling {
   private channelName: string;
   private bc: BroadcastChannel | null = null;
   private onMessageCb: (msg: SignalMessage) => void;
+  private onAccessDeniedCb?: (err: SignalingAccessError) => void;
   private pollInterval: ReturnType<typeof setInterval> | null = null;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private moveFlushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -56,11 +63,13 @@ export class SpaceSignaling {
   constructor(
     spaceSlug: string,
     localPeer: PeerState,
-    onMessage: (msg: SignalMessage) => void
+    onMessage: (msg: SignalMessage) => void,
+    onAccessDenied?: (err: SignalingAccessError) => void
   ) {
     this.channelName = `forgespace_${spaceSlug}`;
     this.localPeer = localPeer;
     this.onMessageCb = onMessage;
+    this.onAccessDeniedCb = onAccessDenied;
 
     if (typeof window !== "undefined" && "BroadcastChannel" in window) {
       try {
@@ -179,14 +188,16 @@ export class SpaceSignaling {
     this.sendToEdge(msg).catch(() => {});
   }
 
-  private async readErrorDetail(res: Response): Promise<string | undefined> {
+  private async readErrorInfo(res: Response): Promise<{ error?: string; code?: string }> {
     try {
-      const data = (await res.json()) as { error?: unknown };
-      if (typeof data?.error === "string") return data.error;
+      const data = (await res.json()) as { error?: unknown; code?: unknown };
+      return {
+        error: typeof data?.error === "string" ? data.error : undefined,
+        code: typeof data?.code === "string" ? data.code : undefined,
+      };
     } catch {
-      // Ignore non-JSON error responses
+      return {};
     }
-    return undefined;
   }
 
   private sendToEdge(msg: SignalMessage): Promise<void> {
@@ -207,12 +218,19 @@ export class SpaceSignaling {
             }),
           });
           if (!res.ok) {
-            const detail = await this.readErrorDetail(res);
+            const detail = await this.readErrorInfo(res);
             console.warn("[SpaceSignaling] POST /api/space/peers failed:", {
               status: res.status,
               messageType: msg.type,
-              error: detail,
+              error: detail.error,
             });
+            if ((res.status === 401 || res.status === 403) && !this.destroyed) {
+              this.onAccessDeniedCb?.({
+                status: res.status,
+                code: detail.code,
+                message: detail.error || "Access denied for this workspace.",
+              });
+            }
             return;
           }
           if (msg.type === "webrtc_signal" || msg.type === "peer_join") {
@@ -247,12 +265,19 @@ export class SpaceSignaling {
         { cache: "no-store" }
       );
       if (!res.ok) {
-        const detail = await this.readErrorDetail(res);
+        const detail = await this.readErrorInfo(res);
         console.warn("[SpaceSignaling] GET /api/space/peers failed:", {
           status: res.status,
           since: this.lastEdgeCursor,
-          error: detail,
+          error: detail.error,
         });
+        if ((res.status === 401 || res.status === 403) && !this.destroyed) {
+          this.onAccessDeniedCb?.({
+            status: res.status,
+            code: detail.code,
+            message: detail.error || "Access denied for this workspace.",
+          });
+        }
         return;
       }
       if (!this.destroyed) {

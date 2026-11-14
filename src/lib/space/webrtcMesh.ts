@@ -144,6 +144,9 @@ export class WebRTCMeshManager {
   private vadInterval: ReturnType<typeof setInterval> | null = null;
   private audioScope: AudioScope = "office";
   private destroyed = false;
+  private runtimeIceServers: RTCIceServer[] | null = null;
+  private runtimeHasTurn: boolean | null = null;
+  private iceConfigPromise: Promise<void> | null = null;
 
   public isAudioMuted = true;
   public isVideoMuted = true;
@@ -171,6 +174,23 @@ export class WebRTCMeshManager {
       if (AudioContextClass) {
         this.audioCtx = new AudioContextClass();
       }
+      if (typeof fetch === "function") {
+        this.iceConfigPromise = this.preloadEphemeralTurn();
+      }
+    }
+  }
+
+  private async preloadEphemeralTurn(): Promise<void> {
+    try {
+      const res = await fetch("/api/space/turn", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = (await res.json()) as { iceServers?: RTCIceServer[]; hasTurn?: boolean };
+      if (Array.isArray(data.iceServers) && data.iceServers.length > 0) {
+        this.runtimeIceServers = data.iceServers;
+        this.runtimeHasTurn = Boolean(data.hasTurn);
+      }
+    } catch {
+      // Non-fatal: keep static STUN / env TURN configuration
     }
   }
 
@@ -524,8 +544,8 @@ export class WebRTCMeshManager {
   public async connectToPeer(peerId: string, initiator: boolean): Promise<void> {
     if (this.destroyed || this.peers.has(peerId)) return;
 
-    const iceServers = getIceServers();
-    const hasTurn = hasTurnConfiguration();
+    const iceServers = this.runtimeIceServers ?? getIceServers();
+    let hasTurn = this.runtimeHasTurn ?? hasTurnConfiguration();
     const pc = new RTCPeerConnection({
       iceServers,
       iceCandidatePoolSize: 2,
@@ -656,11 +676,34 @@ export class WebRTCMeshManager {
     };
 
     try {
+      const waitTasks: Promise<unknown>[] = [];
       if (this.localMediaPromise) {
-        await this.localMediaPromise.catch(() => null);
+        waitTasks.push(this.localMediaPromise.catch(() => null));
+      }
+      if (this.iceConfigPromise && this.runtimeIceServers === null) {
+        waitTasks.push(
+          Promise.race([
+            this.iceConfigPromise,
+            new Promise((res) => setTimeout(res, 1200)),
+          ])
+        );
+      }
+      if (waitTasks.length > 0) {
+        await Promise.all(waitTasks);
       }
       if (this.destroyed || this.peers.get(peerId) !== entry) {
         return;
+      }
+      if (this.runtimeIceServers && typeof pc.setConfiguration === "function") {
+        try {
+          pc.setConfiguration({
+            iceServers: this.runtimeIceServers,
+            iceCandidatePoolSize: 2,
+          });
+          hasTurn = Boolean(this.runtimeHasTurn);
+        } catch {
+          // Ignore if browser disallows reconfiguration
+        }
       }
       entry.initialSyncDone = true;
       // Only attach pre-offer transceivers when initiating; responders bind tracks

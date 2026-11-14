@@ -59,6 +59,10 @@ interface SpaceViewProps {
   spaceName?: string;
   initialUserName?: string;
   initialAvatarColor?: string;
+  allowScreenShare?: boolean;
+  maxParticipants?: number;
+  planTier?: string;
+  isManagedWorkspace?: boolean;
 }
 
 const WATERCOOLER_PROMPTS = [
@@ -74,6 +78,10 @@ export function SpaceView({
   spaceName = "Acme Virtual HQ",
   initialUserName = "Coworker",
   initialAvatarColor = "#37E6C4",
+  allowScreenShare = true,
+  maxParticipants,
+  planTier,
+  isManagedWorkspace = false,
 }: SpaceViewProps) {
   // Tilemap state
   const [map] = useState<OfficeTilemap>(() => createDefaultOfficeMap());
@@ -155,6 +163,8 @@ export function SpaceView({
   const [coffeeBoostNotice, setCoffeeBoostNotice] = useState(false);
   const [audioUnlockNeeded, setAudioUnlockNeeded] = useState(false);
   const [iceFailureNotice, setIceFailureNotice] = useState<string | null>(null);
+  const [accessBlockedReason, setAccessBlockedReason] = useState<string | null>(null);
+  const [planNotice, setPlanNotice] = useState<string | null>(null);
   const [inviteCopied, setInviteCopied] = useState(false);
   const [copyStatusText, setCopyStatusText] = useState("");
 
@@ -634,7 +644,16 @@ export function SpaceView({
       });
 
     // 2. Initialize Signaling Channel
-    const signaling = new SpaceSignaling(spaceSlug, localPeerRef.current, handleSignalMessage);
+    const signaling = new SpaceSignaling(
+      spaceSlug,
+      localPeerRef.current,
+      handleSignalMessage,
+      (accessErr) => {
+        setAccessBlockedReason(accessErr.message);
+        signaling.destroy();
+        webrtc.destroy();
+      }
+    );
     signalingRef.current = signaling;
 
     // 3. Periodically prune disconnected peers that missed peer_leave (> 30s without heartbeat)
@@ -758,6 +777,11 @@ export function SpaceView({
 
   // Toggle Screen Share
   const handleToggleScreenShare = async () => {
+    if (!allowScreenShare) {
+      setPlanNotice("HD Screen Sharing requires a Boss Pro workspace — upgrade at /admin.");
+      setTimeout(() => setPlanNotice(null), 5000);
+      return;
+    }
     const sharing = (await webrtcRef.current?.toggleScreenShare()) ?? false;
     setLocalPeer((prev) => {
       const nextMedia = { ...prev.media, screen: sharing };
@@ -1075,8 +1099,8 @@ export function SpaceView({
             </div>
           )}
 
-          {/* Actionable WebRTC Audio Unlock / ICE Failure HUD Pill */}
-          {(audioUnlockNeeded || iceFailureNotice) && (
+          {/* Actionable WebRTC Audio Unlock / ICE Failure / Plan HUD Pills */}
+          {(audioUnlockNeeded || iceFailureNotice || planNotice) && (
             <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1.5 max-w-[92vw]">
               {audioUnlockNeeded && (
                 <button
@@ -1092,13 +1116,16 @@ export function SpaceView({
                   <span>Tap to enable coworker audio</span>
                 </button>
               )}
-              {iceFailureNotice && (
+              {(planNotice || iceFailureNotice) && (
                 <div className="px-3.5 py-1.5 rounded-full bg-amber-500/95 text-black font-display text-[11px] font-semibold shadow-arcade flex items-center gap-2">
-                  <span>{iceFailureNotice}</span>
+                  <span>{planNotice || iceFailureNotice}</span>
                   <button
                     type="button"
                     aria-label="Dismiss network notice"
-                    onClick={() => setIceFailureNotice(null)}
+                    onClick={() => {
+                      setPlanNotice(null);
+                      setIceFailureNotice(null);
+                    }}
                     className="font-bold opacity-80 hover:opacity-100"
                   >
                     ✕
@@ -1108,12 +1135,44 @@ export function SpaceView({
             </div>
           )}
 
+          {/* Workspace Seat Limit / Passcode Gate Blocking Overlay */}
+          {accessBlockedReason && (
+            <div className="absolute inset-0 z-50 bg-bg/90 backdrop-blur-md flex items-center justify-center p-4">
+              <div className="max-w-md w-full p-6 rounded-container bg-surface border-2 border-amber-500/60 shadow-arcade space-y-4 text-center">
+                <span className="text-[11px] font-mono text-amber-400 uppercase">
+                  {planTier ? `${planTier} Workspace • ${maxParticipants ?? 4} Seats Max` : "Access Restricted"}
+                </span>
+                <h2 className="font-display text-xl font-extrabold text-text">
+                  Cannot Enter {spaceName}
+                </h2>
+                <p className="text-xs text-text-muted leading-relaxed">
+                  {accessBlockedReason}
+                </p>
+                <div className="flex items-center justify-center gap-3 pt-2">
+                  <Link
+                    href="/spaces"
+                    className="px-4 py-2 text-xs bg-surface-2 border border-border rounded-control text-text hover:border-accent"
+                  >
+                    Browse Spaces
+                  </Link>
+                  <Link
+                    href="/admin"
+                    className="px-4 py-2 text-xs font-display font-bold bg-accent text-bg rounded-control shadow-arcade hover:brightness-110"
+                  >
+                    {isManagedWorkspace ? "Upgrade at Boss Portal →" : "Open Boss Portal →"}
+                  </Link>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Floating Controls Dock (Bottom Center) */}
           <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 max-w-[96vw]">
             <SpaceControls
               isAudioMuted={!localPeer.media.audio}
               isVideoMuted={!localPeer.media.video}
               isScreenSharing={localPeer.media.screen}
+              screenShareLocked={!allowScreenShare}
               isFullscreen={isFullscreen}
               videoLayout={videoLayout}
               viewMode={viewMode}

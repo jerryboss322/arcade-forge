@@ -34,39 +34,47 @@ enum JamStatus {
 }
 
 model User {
-  id           String        @id @default(cuid())
-  email        String        @unique
-  username     String        @unique
-  avatarUrl    String?
-  bio          String?
-  role         String        @default("USER") // USER, MODERATOR, ADMIN
-  badges       String[]      @default([])
-  games        Game[]
-  likes        Like[]
-  scores       Score[]
-  reports      Report[]
-  reactions    Reaction[]
-  jamEntries   JamEntry[]
-  jamRatings   JamRating[]
-  notifications Notification[]
-  ownedWorkspaces  Workspace[]
-  workspaceMembers WorkspaceMember[]
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
+  id                   String        @id @default(cuid())
+  email                String        @unique
+  username             String        @unique
+  passwordHash         String?
+  plan                 String        @default("FREE") // FREE, PRO
+  planUpdatedAt        DateTime?
+  stripeCustomerId     String?
+  stripeSubscriptionId String?
+  avatarUrl            String?
+  bio                  String?
+  role                 String        @default("USER") // USER, BOSS, MODERATOR, ADMIN
+  badges               String[]      @default([])
+  games                Game[]
+  likes                Like[]
+  scores               Score[]
+  reports              Report[]
+  reactions            Reaction[]
+  jamEntries           JamEntry[]
+  jamRatings           JamRating[]
+  notifications        Notification[]
+  ownedWorkspaces      Workspace[]
+  workspaceMembers     WorkspaceMember[]
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
 }
 
 model Workspace {
-  id          String   @id @default(cuid())
-  slug        String   @unique
-  name        String
-  description String?
-  passcode    String?
-  officeMap   Json     // ForgeGameSchemaV1_1 tilemaps, entities, zones
-  ownerId     String
-  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  members     WorkspaceMember[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String   @id @default(cuid())
+  slug             String   @unique
+  name             String
+  description      String?
+  passcode         String?
+  planTier         String   @default("FREE") // FREE, PRO
+  maxParticipants  Int      @default(4)
+  allowScreenShare Boolean  @default(false)
+  officeMap        Json     // ForgeGameSchemaV1_1 tilemaps, entities, zones
+  ownerId          String
+  owner            User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  members          WorkspaceMember[]
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 }
 
 model WorkspaceMember {

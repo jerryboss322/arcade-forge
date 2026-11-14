@@ -94,7 +94,64 @@ export default function PricingPage() {
 
       {/* Pricing Tiers Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
-        {/* Tier 1: Open P2P Mesh */}
+        {/* Tier 1: Free Starter (Limited Access) */}
+        <div className="p-8 rounded-container border-2 border-border bg-surface shadow-arcade flex flex-col justify-between space-y-6 relative">
+          <div className="absolute top-4 right-4 px-2.5 py-0.5 rounded-full text-[10px] font-display font-bold bg-surface-2 text-text-muted border border-border uppercase">
+            Limited Access
+          </div>
+
+          <div className="space-y-4">
+            <div>
+              <span className="text-xs font-mono text-emerald-400 uppercase font-semibold">
+                Free Starter Plan
+              </span>
+              <h3 className="font-display text-2xl font-extrabold text-text mt-1">
+                Small Teams &amp; Trial
+              </h3>
+            </div>
+
+            <div className="flex items-baseline gap-1">
+              <span className="text-4xl font-display font-black text-emerald-400">$0</span>
+              <span className="text-text-muted text-xs font-mono">/ mo forever</span>
+            </div>
+
+            <p className="text-xs text-text-muted leading-relaxed">
+              One Boss/Admin account launches 1 password-protected office for up to 4 team members at zero cost. Employees join directly via link without signing up.
+            </p>
+
+            <ul className="space-y-2.5 pt-4 border-t border-border text-xs text-text">
+              <li className="flex items-center gap-2">
+                <span className="text-emerald-400 font-bold">✓</span>
+                <span>1 passworded Boss workspace</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="text-emerald-400 font-bold">✓</span>
+                <span>Up to 4 simultaneous participants per space</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="text-emerald-400 font-bold">✓</span>
+                <span>Live webcam, spatial mic audio &amp; chat</span>
+              </li>
+              <li className="flex items-center gap-2">
+                <span className="text-emerald-400 font-bold">✓</span>
+                <span>Zero employee accounts or database bloat</span>
+              </li>
+              <li className="flex items-center gap-2 text-text-muted">
+                <span className="text-amber-400 font-bold">✕</span>
+                <span>HD screen sharing locked (Boss Pro only)</span>
+              </li>
+            </ul>
+          </div>
+
+          <Link
+            href="/admin"
+            className="w-full py-3 text-center bg-surface-2 border-2 border-border hover:border-accent text-text font-display font-bold text-xs uppercase rounded-control transition-all block"
+          >
+            Start Free Workspace →
+          </Link>
+        </div>
+
+        {/* Tier 2: Boss Pro Team */}
         <div className="p-8 rounded-container border-2 border-accent bg-surface shadow-arcade flex flex-col justify-between space-y-6 relative">
           <div className="absolute top-4 right-4 px-2.5 py-0.5 rounded-full text-[10px] font-display font-bold bg-accent text-bg uppercase">
             Most Popular
@@ -103,116 +160,51 @@ export default function PricingPage() {
           <div className="space-y-4">
             <div>
               <span className="text-xs font-mono text-accent uppercase font-semibold">
-                Open P2P Edition
+                Boss / Admin Pro
               </span>
               <h3 className="font-display text-2xl font-extrabold text-text mt-1">
-                Community & Teams
+                Growing Companies
               </h3>
             </div>
 
             <div className="flex items-baseline gap-1">
-              <span className="text-4xl font-display font-black text-emerald-400">$0</span>
-              <span className="text-text-muted text-xs font-mono">/ user / forever</span>
+              <span className="text-4xl font-display font-black text-accent">$9</span>
+              <span className="text-text-muted text-xs font-mono">/ mo per admin ($0 per employee)</span>
             </div>
 
             <p className="text-xs text-text-muted leading-relaxed">
-              Full access to all 3D & 2D virtual office rooms, WebRTC proximity audio, soundproof meeting rooms, and collaborative whiteboards.
+              Only the Boss/Admin holds an account. Share your passworded workspace link with up to 30 employees simultaneously with zero seat fees.
             </p>
 
             <ul className="space-y-2.5 pt-4 border-t border-border text-xs text-text">
               <li className="flex items-center gap-2">
-                <span className="text-emerald-400 font-bold">✓</span>
-                <span>Unlimited rooms & floorplans</span>
+                <span className="text-accent font-bold">✓</span>
+                <span>Up to 20 passworded workspaces</span>
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-emerald-400 font-bold">✓</span>
-                <span>P2P WebRTC spatial proximity audio</span>
+                <span className="text-accent font-bold">✓</span>
+                <span>Up to 30 concurrent employees per space</span>
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-emerald-400 font-bold">✓</span>
-                <span>3D Isometric WebGL & 2D Top-Down canvas</span>
+                <span className="text-accent font-bold">✓</span>
+                <span>HD Screen Sharing &amp; Watch Theater unlocked</span>
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-emerald-400 font-bold">✓</span>
-                <span>Soundproof glass boardrooms & door knocks</span>
+                <span className="text-accent font-bold">✓</span>
+                <span>Instant passcode rotation &amp; revocation</span>
               </li>
               <li className="flex items-center gap-2">
-                <span className="text-emerald-400 font-bold">✓</span>
-                <span>Interactive whiteboard & sprint sticky notes</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-emerald-400 font-bold">✓</span>
-                <span>Built-in Lo-Fi Radio & focus audio synth</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-emerald-400 font-bold">✓</span>
-                <span>Zero server telemetry tracking or audio recording</span>
+                <span className="text-accent font-bold">✓</span>
+                <span>Ephemeral TURN relay support for strict NATs</span>
               </li>
             </ul>
           </div>
 
           <Link
-            href="/spaces"
+            href="/admin"
             className="w-full py-3 text-center bg-accent text-bg font-display font-bold text-xs uppercase rounded-control shadow-arcade hover:brightness-110 transition-all block"
           >
-            Launch Your Office Now →
-          </Link>
-        </div>
-
-        {/* Tier 2: Enterprise Self-Hosted */}
-        <div className="p-8 rounded-container border-2 border-border bg-surface-2 flex flex-col justify-between space-y-6">
-          <div className="space-y-4">
-            <div>
-              <span className="text-xs font-mono text-text-muted uppercase font-semibold">
-                Self-Hosted & Dedicated
-              </span>
-              <h3 className="font-display text-2xl font-extrabold text-text mt-1">
-                Enterprise Private
-              </h3>
-            </div>
-
-            <div className="flex items-baseline gap-1">
-              <span className="text-4xl font-display font-black text-text">Custom</span>
-              <span className="text-text-muted text-xs font-mono">/ dedicated cluster</span>
-            </div>
-
-            <p className="text-xs text-text-muted leading-relaxed">
-              For security-conscious enterprises requiring bespoke architectural floorplans, SAML/Okta SSO single sign-on, and private on-premise TURN relay clusters.
-            </p>
-
-            <ul className="space-y-2.5 pt-4 border-t border-border text-xs text-text">
-              <li className="flex items-center gap-2">
-                <span className="text-accent font-bold">✓</span>
-                <span>Everything in Open P2P Edition</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-accent font-bold">✓</span>
-                <span>SAML / Okta / Google Workspace SSO</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-accent font-bold">✓</span>
-                <span>Custom corporate headquarters 3D floorplan design</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-accent font-bold">✓</span>
-                <span>Dedicated enterprise TURN servers for strict firewalls</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-accent font-bold">✓</span>
-                <span>SOC2 Type II compliance audit reports</span>
-              </li>
-              <li className="flex items-center gap-2">
-                <span className="text-accent font-bold">✓</span>
-                <span>24/7 dedicated engineering support & SLA</span>
-              </li>
-            </ul>
-          </div>
-
-          <Link
-            href="/about"
-            className="w-full py-3 text-center bg-surface border-2 border-border hover:border-accent text-text font-display font-bold text-xs uppercase rounded-control transition-all block"
-          >
-            Contact Enterprise Team →
+            Create Boss Pro Workspace →
           </Link>
         </div>
       </div>
