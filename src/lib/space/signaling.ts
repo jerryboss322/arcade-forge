@@ -179,28 +179,53 @@ export class SpaceSignaling {
     this.sendToEdge(msg).catch(() => {});
   }
 
+  private async readErrorDetail(res: Response): Promise<string | undefined> {
+    try {
+      const data = (await res.json()) as { error?: unknown };
+      if (typeof data?.error === "string") return data.error;
+    } catch {
+      // Ignore non-JSON error responses
+    }
+    return undefined;
+  }
+
   private sendToEdge(msg: SignalMessage): Promise<void> {
-    // Serialize Edge/Redis writes per client so Offer -> Candidates arrive in strict sequence
-    const next = this.edgeSendQueue.then(async () => {
-      if (this.destroyed && msg.type !== "peer_leave") return;
-      try {
-        await fetch("/api/space/peers", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            channel: this.channelName,
-            message: msg,
-            senderId: this.localPeer.id,
-          }),
-        });
-        if (msg.type === "webrtc_signal" || msg.type === "peer_join") {
-          this.scheduleFastPoll();
+    // Serialize Edge/Redis writes per client so Offer -> Candidates arrive in strict sequence.
+    // Guard edgeSendQueue with .catch so one failed HTTP call never poisons later sends.
+    const next = this.edgeSendQueue
+      .catch(() => {})
+      .then(async () => {
+        if (this.destroyed && msg.type !== "peer_leave") return;
+        try {
+          const res = await fetch("/api/space/peers", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              channel: this.channelName,
+              message: msg,
+              senderId: this.localPeer.id,
+            }),
+          });
+          if (!res.ok) {
+            const detail = await this.readErrorDetail(res);
+            console.warn("[SpaceSignaling] POST /api/space/peers failed:", {
+              status: res.status,
+              messageType: msg.type,
+              error: detail,
+            });
+            return;
+          }
+          if (msg.type === "webrtc_signal" || msg.type === "peer_join") {
+            this.scheduleFastPoll();
+          }
+        } catch (err) {
+          console.warn("[SpaceSignaling] POST /api/space/peers error:", {
+            messageType: msg.type,
+            error: err instanceof Error ? err.message : String(err),
+          });
         }
-      } catch {
-        // Offline/sandbox safe
-      }
-    });
-    this.edgeSendQueue = next;
+      });
+    this.edgeSendQueue = next.catch(() => {});
     return next;
   }
 
@@ -221,7 +246,16 @@ export class SpaceSignaling {
         `/api/space/peers?channel=${encodeURIComponent(this.channelName)}&senderId=${encodeURIComponent(this.localPeer.id)}&since=${this.lastEdgeCursor}`,
         { cache: "no-store" }
       );
-      if (res.ok && !this.destroyed) {
+      if (!res.ok) {
+        const detail = await this.readErrorDetail(res);
+        console.warn("[SpaceSignaling] GET /api/space/peers failed:", {
+          status: res.status,
+          since: this.lastEdgeCursor,
+          error: detail,
+        });
+        return;
+      }
+      if (!this.destroyed) {
         const data = await res.json();
         if (typeof data.cursor === "number") {
           this.lastEdgeCursor = data.cursor;
@@ -255,8 +289,11 @@ export class SpaceSignaling {
           }
         }
       }
-    } catch {
-      // Fallback silently
+    } catch (err) {
+      console.warn("[SpaceSignaling] GET /api/space/peers error:", {
+        since: this.lastEdgeCursor,
+        error: err instanceof Error ? err.message : String(err),
+      });
     } finally {
       this.pollInFlight = false;
     }
