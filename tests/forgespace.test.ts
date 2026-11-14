@@ -1329,4 +1329,88 @@ describe("ForgeSpace WebRTC Media & Transceiver Fixes", () => {
       (globalThis as unknown as Record<string, unknown>).window = origWindow;
     }
   });
+
+  it("reports ICE failure details to onIceFailure callback and retries ICE restart", async () => {
+    const origPC = globalThis.RTCPeerConnection;
+    const origNav = globalThis.navigator;
+    let lastPc: {
+      connectionState: string;
+      iceConnectionState: string;
+      signalingState: string;
+      oniceconnectionstatechange?: () => void;
+      restarted: boolean;
+    } | null = null;
+
+    class FailMockPC {
+      signalingState = "stable";
+      connectionState = "new";
+      iceConnectionState = "new";
+      localDescription: unknown = null;
+      restarted = false;
+      oniceconnectionstatechange?: () => void;
+      onconnectionstatechange?: () => void;
+      addTransceiver() {
+        return {
+          mid: null,
+          currentDirection: "recvonly",
+          direction: "recvonly",
+          sender: { track: null, replaceTrack: async () => {} },
+          receiver: { track: { kind: "audio" } },
+        };
+      }
+      getTransceivers() {
+        return [];
+      }
+      createDataChannel() {
+        return {};
+      }
+      async createOffer() {
+        return { type: "offer", sdp: "v=0" };
+      }
+      async setLocalDescription(d: unknown) {
+        this.localDescription = d;
+      }
+      restartIce() {
+        this.restarted = true;
+      }
+      close() {}
+    }
+
+    (globalThis as unknown as Record<string, unknown>).RTCPeerConnection = function MockCtor() {
+      const pc = new FailMockPC();
+      lastPc = pc;
+      return pc;
+    };
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {},
+    });
+
+    const iceFailures: Array<{ peerId: string; hasTurn: boolean }> = [];
+    const mesh = new WebRTCMeshManager(
+      () => {},
+      () => {},
+      () => {},
+      "peer_ice_a",
+      undefined,
+      (peerId, details) => iceFailures.push({ peerId, ...details })
+    );
+
+    try {
+      await mesh.connectToPeer("peer_ice_b", true);
+      expect(lastPc).not.toBeNull();
+      lastPc!.iceConnectionState = "failed";
+      lastPc!.oniceconnectionstatechange?.();
+      expect(iceFailures).toHaveLength(1);
+      expect(iceFailures[0]).toEqual({ peerId: "peer_ice_b", hasTurn: false });
+      expect(lastPc!.restarted).toBe(true);
+    } finally {
+      mesh.destroy();
+      (globalThis as unknown as Record<string, unknown>).RTCPeerConnection = origPC;
+      Object.defineProperty(globalThis, "navigator", {
+        configurable: true,
+        value: origNav,
+      });
+    }
+  });
 });

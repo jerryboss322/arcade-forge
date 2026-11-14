@@ -139,6 +139,7 @@ export class WebRTCMeshManager {
   private onRemoteStreamCb: (peerId: string, stream: MediaStream, isSpeaking: boolean) => void;
   private onSpeakingChangeCb: (peerId: string, speaking: boolean) => void;
   private onDataChannelCb?: (peerId: string, channel: RTCDataChannel) => void;
+  private onIceFailureCb?: (peerId: string, details: { hasTurn: boolean }) => void;
   private localPeerId: string;
   private vadInterval: ReturnType<typeof setInterval> | null = null;
   private audioScope: AudioScope = "office";
@@ -153,13 +154,15 @@ export class WebRTCMeshManager {
     onRemoteStream: (peerId: string, stream: MediaStream, isSpeaking: boolean) => void,
     onSpeakingChange: (peerId: string, speaking: boolean) => void,
     localPeerId = "",
-    onDataChannel?: (peerId: string, channel: RTCDataChannel) => void
+    onDataChannel?: (peerId: string, channel: RTCDataChannel) => void,
+    onIceFailure?: (peerId: string, details: { hasTurn: boolean }) => void
   ) {
     this.sendSignalCb = sendSignal;
     this.onRemoteStreamCb = onRemoteStream;
     this.onSpeakingChangeCb = onSpeakingChange;
     this.localPeerId = localPeerId;
     this.onDataChannelCb = onDataChannel;
+    this.onIceFailureCb = onIceFailure;
 
     if (typeof window !== "undefined") {
       const AudioContextClass =
@@ -190,10 +193,25 @@ export class WebRTCMeshManager {
   }
 
   /**
+   * Returns true when browser autoplay policy currently suspends Web Audio playback.
+   */
+  public needsAudioUnlock(): boolean {
+    return Boolean(!this.destroyed && this.audioCtx && this.audioCtx.state === "suspended");
+  }
+
+  /**
    * Unlocks browser AudioContext on user interaction and retries active HTMLAudioElement sinks.
    */
   public async resumeAudio(): Promise<boolean> {
     if (this.destroyed) return false;
+
+    // Synchronously prime sinkAudio inside transient user activation before awaiting audioCtx.resume()
+    for (const entry of this.peers.values()) {
+      const sinkAudio = entry.remoteMedia?.sinkAudio;
+      if (sinkAudio) {
+        sinkAudio.play().catch(() => {});
+      }
+    }
 
     if (this.audioCtx && this.audioCtx.state === "suspended") {
       try {
@@ -579,6 +597,7 @@ export class WebRTCMeshManager {
           iceConnectionState: pc.iceConnectionState,
           hasTurn,
         });
+        this.onIceFailureCb?.(peerId, { hasTurn });
         if (!entry.restartedIce) {
           entry.restartedIce = true;
           pc.restartIce?.();
@@ -625,7 +644,12 @@ export class WebRTCMeshManager {
       };
 
       // Re-emit whenever track unmutes, mutes, or ends so UI switches live video cleanly
-      event.track.onunmute = emitStream;
+      event.track.onunmute = () => {
+        if (event.track.kind === "audio" && entry.remoteMedia?.sinkAudio) {
+          entry.remoteMedia.sinkAudio.play().catch(() => {});
+        }
+        emitStream();
+      };
       event.track.onmute = emitStream;
       event.track.onended = emitStream;
       emitStream();

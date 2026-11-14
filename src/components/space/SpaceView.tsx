@@ -153,6 +153,8 @@ export function SpaceView({
   const [pulseModalOpen, setPulseModalOpen] = useState(false);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
   const [coffeeBoostNotice, setCoffeeBoostNotice] = useState(false);
+  const [audioUnlockNeeded, setAudioUnlockNeeded] = useState(false);
+  const [iceFailureNotice, setIceFailureNotice] = useState<string | null>(null);
   const [inviteCopied, setInviteCopied] = useState(false);
   const [copyStatusText, setCopyStatusText] = useState("");
 
@@ -362,15 +364,23 @@ export function SpaceView({
     });
   }, [syncAllSpatialDistances]);
 
-  // Unlock browser Web Audio / media playback on first user pointer or keyboard interaction
+  // Unlock browser Web Audio / media playback on first user gesture (desktop + iOS/mobile)
   useEffect(() => {
     const unlockAudio = () => {
-      void webrtcRef.current?.resumeAudio();
+      void webrtcRef.current?.resumeAudio().then((unlocked) => {
+        if (unlocked) {
+          setAudioUnlockNeeded(false);
+        }
+      });
     };
     window.addEventListener("pointerdown", unlockAudio, { passive: true });
+    window.addEventListener("touchend", unlockAudio, { passive: true });
+    window.addEventListener("click", unlockAudio, { passive: true });
     window.addEventListener("keydown", unlockAudio, { passive: true });
     return () => {
       window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("touchend", unlockAudio);
+      window.removeEventListener("click", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
     };
   }, []);
@@ -554,6 +564,9 @@ export function SpaceView({
         if (isSpeaking !== undefined) {
           setSpeakingMap((prev) => ({ ...prev, [peerId]: isSpeaking }));
         }
+        if (stream.getAudioTracks().length > 0 && webrtc.needsAudioUnlock()) {
+          setAudioUnlockNeeded(true);
+        }
         const matchedPeer = remotePeersRef.current.find((p) => p.id === peerId);
         if (matchedPeer) {
           const lp = localPeerRef.current;
@@ -586,6 +599,13 @@ export function SpaceView({
       localPeerRef.current.id,
       (peerId: string, channel: RTCDataChannel) => {
         signalingRef.current?.attachDataChannel(peerId, channel);
+      },
+      (_peerId: string, { hasTurn }) => {
+        setIceFailureNotice(
+          hasTurn
+            ? "Peer media connection blocked by a strict network or firewall. Try refreshing."
+            : "Cross-network media blocked by NAT/firewall: configure a TURN relay (NEXT_PUBLIC_TURN_URL) in Vercel."
+        );
       }
     );
 
@@ -1052,6 +1072,39 @@ export function SpaceView({
           {coffeeBoostNotice && (
             <div className="absolute top-14 left-1/2 -translate-x-1/2 z-30 px-4 py-1.5 bg-amber-500/90 text-black font-display text-xs font-bold rounded-full shadow-arcade animate-bounce">
               ESPRESSO BOOST ACTIVATED (+50% Speed)
+            </div>
+          )}
+
+          {/* Actionable WebRTC Audio Unlock / ICE Failure HUD Pill */}
+          {(audioUnlockNeeded || iceFailureNotice) && (
+            <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 flex flex-col items-center gap-1.5 max-w-[92vw]">
+              {audioUnlockNeeded && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    void webrtcRef.current?.resumeAudio().then((ok) => {
+                      if (ok) setAudioUnlockNeeded(false);
+                    });
+                  }}
+                  className="px-3.5 py-1.5 rounded-full bg-accent text-bg font-display text-xs font-bold shadow-arcade hover:brightness-110 flex items-center gap-1.5"
+                >
+                  <IconMic className="w-3.5 h-3.5" />
+                  <span>Tap to enable coworker audio</span>
+                </button>
+              )}
+              {iceFailureNotice && (
+                <div className="px-3.5 py-1.5 rounded-full bg-amber-500/95 text-black font-display text-[11px] font-semibold shadow-arcade flex items-center gap-2">
+                  <span>{iceFailureNotice}</span>
+                  <button
+                    type="button"
+                    aria-label="Dismiss network notice"
+                    onClick={() => setIceFailureNotice(null)}
+                    className="font-bold opacity-80 hover:opacity-100"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
             </div>
           )}
 
