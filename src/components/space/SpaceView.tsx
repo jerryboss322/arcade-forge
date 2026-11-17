@@ -19,6 +19,7 @@ import {
   AudioScope,
   LocalMediaStatus,
   PeerLinkStatus,
+  WebRTCDiagnosticsSnapshot,
   WebRTCMeshManager,
 } from "@/lib/space/webrtcMesh";
 import { SpaceCanvas } from "@/components/space/SpaceCanvas";
@@ -172,6 +173,8 @@ export function SpaceView({
   const [roomLockModalOpen, setRoomLockModalOpen] = useState(false);
   const [pulseModalOpen, setPulseModalOpen] = useState(false);
   const [helpModalOpen, setHelpModalOpen] = useState(false);
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const [diagnostics, setDiagnostics] = useState<WebRTCDiagnosticsSnapshot | null>(null);
   const [coffeeBoostNotice, setCoffeeBoostNotice] = useState(false);
   const [audioUnlockNeeded, setAudioUnlockNeeded] = useState(false);
   const [iceFailureNotice, setIceFailureNotice] = useState<string | null>(null);
@@ -252,7 +255,20 @@ export function SpaceView({
     setIsImmersiveFallback(true);
   }, [isImmersiveFallback]);
 
-  // Toggle Media Controls & Floor Reactions (WhatsApp-style smart recovery + flip camera)
+  const refreshDiagnostics = useCallback(async () => {
+    const snap = await webrtcRef.current?.getDiagnostics();
+    if (snap) setDiagnostics(snap);
+  }, []);
+
+  useEffect(() => {
+    if (!diagnosticsOpen) return;
+    void refreshDiagnostics();
+    const t = setInterval(() => {
+      void refreshDiagnostics();
+    }, 2000);
+    return () => clearInterval(t);
+  }, [diagnosticsOpen, refreshDiagnostics]);
+
   const handleToggleAudio = useCallback(async () => {
     void webrtcRef.current?.resumeAudio();
     const webrtc = webrtcRef.current;
@@ -698,6 +714,18 @@ export function SpaceView({
             if (prev[peerId] === state) return prev;
             return { ...prev, [peerId]: state };
           });
+          if (state === "connected" || state === "relayed") {
+            setIceFailureNotice(null);
+          }
+        },
+        onSlowConnection: (_peerId, { hasTurn }) => {
+          if (cancelled) return;
+          setIceFailureNotice((prev) =>
+            prev ||
+            (hasTurn
+              ? "Peer media is still negotiating — tap Stats to inspect WebRTC ICE."
+              : "Cross-network video needs a TURN relay configured in Vercel (STUN-only mode).")
+          );
         },
       }
     );
@@ -1071,6 +1099,18 @@ export function SpaceView({
             </button>
           )}
 
+          {remotePeers.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setDiagnosticsOpen(true)}
+              aria-label="Connection diagnostics"
+              title="Inspect live WebRTC camera, audio & TURN telemetry"
+              className="h-8 px-2.5 text-[11px] bg-surface/75 hover:bg-surface/95 backdrop-blur-md border border-border/70 hover:border-border text-text-muted hover:text-text rounded-full font-mono transition-colors shadow-sm"
+            >
+              Net
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => setViewMode((m) => (m === "call" ? "3d" : "call"))}
@@ -1286,6 +1326,15 @@ export function SpaceView({
               {(planNotice || iceFailureNotice) && (
                 <div className="px-3.5 py-1.5 rounded-full bg-amber-500/95 text-black font-display text-[11px] font-semibold shadow-arcade flex items-center gap-2">
                   <span>{planNotice || iceFailureNotice}</span>
+                  {iceFailureNotice && !planNotice && (
+                    <button
+                      type="button"
+                      onClick={() => setDiagnosticsOpen(true)}
+                      className="px-2 py-0.5 rounded-full bg-black text-amber-300 font-bold"
+                    >
+                      Inspect
+                    </button>
+                  )}
                   <button
                     type="button"
                     aria-label="Dismiss network notice"
@@ -1475,6 +1524,90 @@ export function SpaceView({
             >
               Hydrated & Back to Work!
             </button>
+          </div>
+        </div>
+      </ArcadeDialog>
+
+      {/* Live WebRTC Connection & Camera Diagnostics */}
+      <ArcadeDialog
+        open={diagnosticsOpen}
+        onClose={() => setDiagnosticsOpen(false)}
+        title="WebRTC Video & Network Diagnostics"
+        maxWidthClass="max-w-lg"
+      >
+        <div className="space-y-3 text-xs text-text">
+          <div className="p-2.5 bg-surface-2 rounded-control flex items-center justify-between gap-2">
+            <div>
+              <p className="font-display font-bold">
+                NAT / TURN Relay:{" "}
+                <span className={diagnostics?.hasTurn ? "text-emerald-400" : "text-amber-400"}>
+                  {diagnostics?.hasTurn ? "Configured (TURN active)" : "Not Configured (STUN-only)"}
+                </span>
+              </p>
+              <p className="text-[11px] text-text-muted mt-0.5">
+                Local tracks: {diagnostics?.localVideoTracks ?? 0} video, {diagnostics?.localAudioTracks ?? 0} audio
+              </p>
+              {(diagnostics?.cameraError || diagnostics?.micError) && (
+                <p className="text-[11px] text-amber-300 mt-1">
+                  {diagnostics.cameraError || diagnostics.micError}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => void handleRetryMedia().then(() => refreshDiagnostics())}
+                className="px-2.5 py-1.5 bg-surface border border-border rounded-control text-[11px] font-bold hover:border-accent"
+              >
+                Retry Cam
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  void webrtcRef.current?.forceReconnectPendingPeers().then(() => refreshDiagnostics())
+                }
+                className="px-2.5 py-1.5 bg-accent text-bg rounded-control text-[11px] font-bold hover:brightness-110"
+              >
+                Reconnect ICE
+              </button>
+            </div>
+          </div>
+
+          {!diagnostics?.hasTurn && (
+            <div className="p-2.5 rounded-control bg-amber-500/15 border border-amber-500/40 text-[11px] text-amber-200 leading-relaxed">
+              Calls across different Wi-Fi networks, 4G/5G cellular carriers, or corporate firewalls
+              require a TURN relay. Set <code className="font-mono">CLOUDFLARE_TURN_TOKEN_ID</code> +{" "}
+              <code className="font-mono">CLOUDFLARE_TURN_API_TOKEN</code> (or{" "}
+              <code className="font-mono">METERED_TURN_DOMAIN</code> +{" "}
+              <code className="font-mono">METERED_TURN_SECRET_KEY</code>) in Vercel Environment Variables.
+            </div>
+          )}
+
+          <div className="space-y-2 max-h-60 overflow-y-auto">
+            {diagnostics?.peers.length ? (
+              diagnostics.peers.map((p) => (
+                <div
+                  key={p.peerId}
+                  className="p-2.5 bg-surface-2 rounded-control border border-border/60 font-mono text-[11px] space-y-1"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-text">{p.peerId} ({p.role})</span>
+                    <span className="text-accent">{p.iceConnectionState} / {p.connectionState}</span>
+                  </div>
+                  <div className="text-text-muted">
+                    Sig: {p.signalingState} | ICE Gather: {p.iceGatheringState}
+                  </div>
+                  <div className="text-text-muted">
+                    Video TX/RX pkts: {p.videoPacketsSent} / {p.videoPacketsReceived} | Audio TX/RX pkts: {p.audioPacketsSent} / {p.audioPacketsReceived}
+                  </div>
+                  <div className="text-text-muted truncate">
+                    Candidates: {p.candidateTypes.length > 0 ? p.candidateTypes.join(", ") : "none yet"}
+                  </div>
+                </div>
+              ))
+            ) : (
+              <p className="text-center text-text-muted py-2">No active peer connections yet.</p>
+            )}
           </div>
         </div>
       </ArcadeDialog>

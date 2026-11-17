@@ -30,7 +30,7 @@ export function hasAttachedVideoTrack(
 ): boolean {
   if (!stream) return false;
   if (!(media.video || media.screen)) return false;
-  return stream.getVideoTracks().some((track) => track.readyState === "live" && track.enabled);
+  return stream.getVideoTracks().some((track) => track.readyState !== "ended" && track.enabled);
 }
 
 interface StreamVideoProps {
@@ -62,38 +62,97 @@ export const StreamVideo = memo(function StreamVideo({
     }
 
     let muteTimer: ReturnType<typeof setTimeout> | null = null;
+    let watchInterval: ReturnType<typeof setInterval> | null = null;
+    let rvfcId: number | null = null;
+    let disposed = false;
+
     const clearMuteTimer = () => {
       if (muteTimer) {
         clearTimeout(muteTimer);
         muteTimer = null;
       }
     };
+    const stopWatchers = () => {
+      if (watchInterval) {
+        clearInterval(watchInterval);
+        watchInterval = null;
+      }
+      if (rvfcId !== null && "cancelVideoFrameCallback" in videoEl) {
+        try {
+          (videoEl as HTMLVideoElement & { cancelVideoFrameCallback: (id: number) => void }).cancelVideoFrameCallback(rvfcId);
+        } catch {
+          // Ignore callback cancel error
+        }
+        rvfcId = null;
+      }
+    };
+
+    const enforceMuteAndInline = () => {
+      videoEl.defaultMuted = true;
+      videoEl.muted = true;
+      videoEl.playsInline = true;
+      videoEl.setAttribute("muted", "");
+      videoEl.setAttribute("playsinline", "");
+    };
 
     const syncFrameState = () => {
+      if (disposed) return;
       const liveTrack = stream
         .getVideoTracks()
-        .find((track) => track.readyState === "live" && track.enabled);
+        .find((track) => track.readyState !== "ended" && track.enabled);
       if (!liveTrack) {
         clearMuteTimer();
         setHasFrames(false);
         return;
       }
-      if (videoEl.videoWidth > 0 && videoEl.readyState >= 2 && !liveTrack.muted) {
+      if (videoEl.videoWidth > 0 && videoEl.readyState >= 2) {
         clearMuteTimer();
+        stopWatchers();
         setHasFrames(true);
       }
     };
 
     const tryPlay = () => {
-      videoEl.muted = true;
+      enforceMuteAndInline();
       videoEl.play().catch(() => {});
       syncFrameState();
     };
 
+    enforceMuteAndInline();
     if (videoEl.srcObject !== stream) {
       videoEl.srcObject = stream;
     }
     tryPlay();
+
+    const startWatchers = () => {
+      if (!watchInterval) {
+        watchInterval = setInterval(syncFrameState, 200);
+      }
+      const rVfc = (
+        videoEl as HTMLVideoElement & {
+          requestVideoFrameCallback?: (cb: () => void) => number;
+        }
+      ).requestVideoFrameCallback;
+      if (typeof rVfc === "function" && rvfcId === null) {
+        try {
+          rvfcId = rVfc.call(videoEl, () => {
+            rvfcId = null;
+            if (disposed) return;
+            const hasLive = stream
+              .getVideoTracks()
+              .some((track) => track.readyState !== "ended" && track.enabled);
+            if (hasLive) {
+              clearMuteTimer();
+              stopWatchers();
+              setHasFrames(true);
+            }
+          });
+        } catch {
+          // Non-fatal fallback to timer/events
+        }
+      }
+    };
+    startWatchers();
 
     const boundTracks = new Set<MediaStreamTrack>();
     const onTrackUnmute = () => {
@@ -103,13 +162,15 @@ export const StreamVideo = memo(function StreamVideo({
     const onTrackMute = () => {
       clearMuteTimer();
       muteTimer = setTimeout(() => {
+        if (disposed) return;
         const anyUnmuted = stream
           .getVideoTracks()
-          .some((t) => t.readyState === "live" && t.enabled && !t.muted);
-        if (!anyUnmuted || videoEl.videoWidth === 0) {
+          .some((t) => t.readyState !== "ended" && t.enabled && !t.muted);
+        if (!anyUnmuted && videoEl.videoWidth === 0) {
           setHasFrames(false);
+          startWatchers();
         }
-      }, 1200);
+      }, 1500);
     };
     const onTrackEnded = () => {
       syncFrameState();
@@ -127,6 +188,7 @@ export const StreamVideo = memo(function StreamVideo({
 
     const onAddTrack = () => {
       bindTracks();
+      startWatchers();
       tryPlay();
     };
     const onRemoveTrack = () => {
@@ -136,12 +198,23 @@ export const StreamVideo = memo(function StreamVideo({
     bindTracks();
     stream.addEventListener("addtrack", onAddTrack);
     stream.addEventListener("removetrack", onRemoveTrack);
-    videoEl.addEventListener("playing", syncFrameState);
-    videoEl.addEventListener("loadeddata", syncFrameState);
-    videoEl.addEventListener("resize", syncFrameState);
+    const mediaEvents = [
+      "loadedmetadata",
+      "loadeddata",
+      "canplay",
+      "canplaythrough",
+      "playing",
+      "resize",
+      "timeupdate",
+    ] as const;
+    for (const evt of mediaEvents) {
+      videoEl.addEventListener(evt, syncFrameState);
+    }
 
     return () => {
+      disposed = true;
       clearMuteTimer();
+      stopWatchers();
       for (const track of boundTracks) {
         track.removeEventListener("unmute", onTrackUnmute);
         track.removeEventListener("mute", onTrackMute);
@@ -150,9 +223,9 @@ export const StreamVideo = memo(function StreamVideo({
       boundTracks.clear();
       stream.removeEventListener("addtrack", onAddTrack);
       stream.removeEventListener("removetrack", onRemoveTrack);
-      videoEl.removeEventListener("playing", syncFrameState);
-      videoEl.removeEventListener("loadeddata", syncFrameState);
-      videoEl.removeEventListener("resize", syncFrameState);
+      for (const evt of mediaEvents) {
+        videoEl.removeEventListener(evt, syncFrameState);
+      }
     };
   }, [stream]);
 
@@ -163,8 +236,15 @@ export const StreamVideo = memo(function StreamVideo({
       playsInline
       muted
       onLoadedMetadata={(e) => {
+        e.currentTarget.defaultMuted = true;
         e.currentTarget.muted = true;
         e.currentTarget.play().catch(() => {});
+        const liveTrack = stream
+          .getVideoTracks()
+          .find((track) => track.readyState !== "ended" && track.enabled);
+        if (liveTrack && e.currentTarget.videoWidth > 0 && e.currentTarget.readyState >= 2) {
+          setHasFrames(true);
+        }
       }}
       className={`${className} ${mirror ? "scale-x-[-1]" : ""}`}
     />

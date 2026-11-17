@@ -69,6 +69,30 @@ export interface WebRTCMeshOptions {
     status: LocalMediaStatus;
   }) => void;
   onPeerStateChange?: (peerId: string, state: PeerLinkStatus) => void;
+  onSlowConnection?: (peerId: string, details: { hasTurn: boolean }) => void;
+}
+
+export interface PeerDiagnosticEntry {
+  peerId: string;
+  role: "initiator" | "responder";
+  iceConnectionState: string;
+  connectionState: string;
+  signalingState: string;
+  iceGatheringState: string;
+  candidateTypes: string[];
+  videoPacketsSent: number;
+  videoPacketsReceived: number;
+  audioPacketsSent: number;
+  audioPacketsReceived: number;
+}
+
+export interface WebRTCDiagnosticsSnapshot {
+  hasTurn: boolean;
+  localAudioTracks: number;
+  localVideoTracks: number;
+  cameraError: string | null;
+  micError: string | null;
+  peers: PeerDiagnosticEntry[];
 }
 
 export interface RemotePeerMedia {
@@ -92,6 +116,7 @@ interface PeerConnectionEntry {
   remoteMedia?: RemotePeerMedia;
   lastIceRestartAt?: number;
   disconnectTimer?: ReturnType<typeof setTimeout>;
+  slowTimer?: ReturnType<typeof setTimeout>;
   signalQueue: Promise<void>;
   makingOffer: boolean;
   initialSyncDone: boolean;
@@ -187,6 +212,7 @@ export class WebRTCMeshManager {
   private onIceFailureCb?: (peerId: string, details: { hasTurn: boolean }) => void;
   private onLocalMediaChangeCb?: WebRTCMeshOptions["onLocalMediaChange"];
   private onPeerStateChangeCb?: WebRTCMeshOptions["onPeerStateChange"];
+  private onSlowConnectionCb?: WebRTCMeshOptions["onSlowConnection"];
   private localPeerId: string;
   private vadInterval: ReturnType<typeof setInterval> | null = null;
   private audioScope: AudioScope = "office";
@@ -219,6 +245,7 @@ export class WebRTCMeshManager {
     this.onIceFailureCb = onIceFailure;
     this.onLocalMediaChangeCb = options?.onLocalMediaChange;
     this.onPeerStateChangeCb = options?.onPeerStateChange;
+    this.onSlowConnectionCb = options?.onSlowConnection;
 
     if (typeof window !== "undefined") {
       const AudioContextClass =
@@ -515,17 +542,32 @@ export class WebRTCMeshManager {
     };
   }
 
+  private enqueuePeerTask(
+    peerId: string,
+    entry: PeerConnectionEntry,
+    task: () => Promise<void>
+  ): Promise<void> {
+    const next = entry.signalQueue
+      .catch(() => {})
+      .then(async () => {
+        if (this.destroyed || this.peers.get(peerId) !== entry) return;
+        await task();
+      });
+    entry.signalQueue = next.catch(() => {});
+    return next;
+  }
+
   private async syncExistingPeersMedia(): Promise<void> {
     if (!this.localStream && !this.screenStream) return;
     for (const [peerId, entry] of this.peers) {
-      // Wait for connectToPeer's initial setup; responders must wait for the initiator's offer
-      // before binding tracks so transceivers match negotiated mids cleanly.
-      if (!entry.initialSyncDone) continue;
-      if (entry.role === "responder" && !entry.pc.remoteDescription) continue;
-      const changed = await this.syncTracksOnConnection(entry.pc);
-      if (changed && entry.pc.signalingState === "stable") {
-        await this.sendOffer(peerId, entry);
-      }
+      await this.enqueuePeerTask(peerId, entry, async () => {
+        if (!entry.initialSyncDone) return;
+        if (entry.role === "responder" && !entry.pc.remoteDescription) return;
+        const changed = await this.syncTracksOnConnection(entry.pc);
+        if (changed && entry.pc.signalingState === "stable") {
+          await this.sendOffer(peerId, entry);
+        }
+      });
     }
   }
 
@@ -788,44 +830,44 @@ export class WebRTCMeshManager {
     const outboundStream = this.localStream || this.screenStream;
     for (const [peerId, entry] of this.peers) {
       await entry.readyPromise;
-      if (this.destroyed || this.peers.get(peerId) !== entry) continue;
+      await this.enqueuePeerTask(peerId, entry, async () => {
+        const { pc } = entry;
+        // Wait for remote description on passive responders before adding/modifying negotiated transceivers
+        if (entry.role === "responder" && !pc.remoteDescription) return;
 
-      const { pc } = entry;
-      // Wait for remote description on passive responders before adding/modifying negotiated transceivers
-      if (entry.role === "responder" && !pc.remoteDescription) continue;
+        const matching = pc
+          .getTransceivers()
+          .filter(
+            (t) =>
+              t.currentDirection !== "stopped" &&
+              (t.sender.track?.kind === "video" || t.receiver.track?.kind === "video")
+          );
+        const videoTransceiver = matching.find((t) => t.mid !== null) ?? matching[0];
 
-      const matching = pc
-        .getTransceivers()
-        .filter(
-          (t) =>
-            t.currentDirection !== "stopped" &&
-            (t.sender.track?.kind === "video" || t.receiver.track?.kind === "video")
-        );
-      const videoTransceiver = matching.find((t) => t.mid !== null) ?? matching[0];
-
-      let needsOffer = false;
-      if (videoTransceiver) {
-        await videoTransceiver.sender.replaceTrack(newVideoTrack).catch((err) => {
-          this.warnLog("replace_video_track_failed", {
-            peerId,
-            error: err instanceof Error ? err.message : String(err),
+        let needsOffer = false;
+        if (videoTransceiver) {
+          await videoTransceiver.sender.replaceTrack(newVideoTrack).catch((err) => {
+            this.warnLog("replace_video_track_failed", {
+              peerId,
+              error: err instanceof Error ? err.message : String(err),
+            });
           });
-        });
-        if (
-          newVideoTrack &&
-          (videoTransceiver.direction === "recvonly" || videoTransceiver.direction === "inactive")
-        ) {
-          videoTransceiver.direction = "sendrecv";
+          if (
+            newVideoTrack &&
+            (videoTransceiver.direction === "recvonly" || videoTransceiver.direction === "inactive")
+          ) {
+            videoTransceiver.direction = "sendrecv";
+            needsOffer = true;
+          }
+        } else if (newVideoTrack && outboundStream) {
+          pc.addTrack(newVideoTrack, outboundStream);
           needsOffer = true;
         }
-      } else if (newVideoTrack && outboundStream) {
-        pc.addTrack(newVideoTrack, outboundStream);
-        needsOffer = true;
-      }
 
-      if (needsOffer && pc.signalingState === "stable") {
-        await this.sendOffer(peerId, entry);
-      }
+        if (needsOffer && pc.signalingState === "stable") {
+          await this.sendOffer(peerId, entry);
+        }
+      });
     }
   }
 
@@ -860,7 +902,7 @@ export class WebRTCMeshManager {
     let hasTurn = this.runtimeHasTurn ?? hasTurnConfiguration();
     const pc = new RTCPeerConnection({
       iceServers,
-      iceCandidatePoolSize: 2,
+      iceCandidatePoolSize: this.runtimeIceServers ? 2 : 0,
     });
 
     this.devLog("peer_connection_created", {
@@ -922,18 +964,44 @@ export class WebRTCMeshManager {
         entry.disconnectTimer = undefined;
       }
     };
+    const clearSlowTimer = () => {
+      if (entry.slowTimer) {
+        clearTimeout(entry.slowTimer);
+        entry.slowTimer = undefined;
+      }
+    };
 
-    const requestIceRestart = (reason: "disconnected" | "failed") => {
+    entry.slowTimer = setTimeout(() => {
+      entry.slowTimer = undefined;
+      if (this.destroyed || this.peers.get(peerId) !== entry) return;
+      if (
+        pc.connectionState !== "connected" &&
+        pc.iceConnectionState !== "connected" &&
+        pc.iceConnectionState !== "completed"
+      ) {
+        this.onSlowConnectionCb?.(peerId, {
+          hasTurn: Boolean(this.runtimeHasTurn ?? hasTurn),
+        });
+      }
+    }, 7000);
+
+    const requestIceRestart = (reason: "disconnected" | "failed" | "manual") => {
       if (this.destroyed || this.peers.get(peerId) !== entry) return;
       const now = Date.now();
-      if (entry.lastIceRestartAt && now - entry.lastIceRestartAt < 5000) {
+      if (
+        reason !== "manual" &&
+        entry.lastIceRestartAt &&
+        now - entry.lastIceRestartAt < 5000
+      ) {
         return;
       }
       entry.lastIceRestartAt = now;
       this.devLog("ice_restart_triggered", { peerId, reason, hasTurn });
       pc.restartIce?.();
       if (pc.signalingState === "stable") {
-        void this.sendOffer(peerId, entry);
+        void this.enqueuePeerTask(peerId, entry, async () => {
+          await this.sendOffer(peerId, entry);
+        });
       }
     };
 
@@ -988,6 +1056,7 @@ export class WebRTCMeshManager {
 
       if (connState === "failed" || iceState === "failed") {
         clearDisconnectTimer();
+        clearSlowTimer();
         this.onPeerStateChangeCb?.(peerId, "failed");
         this.warnLog("ice_connection_failed", {
           peerId,
@@ -1023,6 +1092,7 @@ export class WebRTCMeshManager {
         iceState === "completed"
       ) {
         clearDisconnectTimer();
+        clearSlowTimer();
         this.onPeerStateChangeCb?.(peerId, "connected");
         inspectConnectedTransport();
         return;
@@ -1080,6 +1150,7 @@ export class WebRTCMeshManager {
       emitStream();
     };
 
+    let initialOfferPromise: Promise<void> | null = null;
     try {
       const waitTasks: Promise<unknown>[] = [];
       if (this.localMediaPromise) {
@@ -1115,14 +1186,17 @@ export class WebRTCMeshManager {
       // directly onto the offer's negotiated m-lines inside handleSignal().
       if (initiator) {
         await this.syncTracksOnConnection(pc);
+        initialOfferPromise = this.enqueuePeerTask(peerId, entry, async () => {
+          await this.sendOffer(peerId, entry);
+        });
       }
     } finally {
       resolveReady();
     }
 
-    if (initiator) {
-      await this.sendOffer(peerId, entry);
-    } else {
+    if (initialOfferPromise) {
+      await initialOfferPromise;
+    } else if (!initiator) {
       // Passive peer backup timer in case initiator's join/offer crossed paths
       entry.fallbackTimer = setTimeout(() => {
         if (
@@ -1132,7 +1206,12 @@ export class WebRTCMeshManager {
           pc.signalingState === "stable"
         ) {
           entry.role = "initiator";
-          void this.syncTracksOnConnection(pc).then(() => this.sendOffer(peerId, entry));
+          void this.enqueuePeerTask(peerId, entry, async () => {
+            if (!pc.remoteDescription && pc.signalingState === "stable") {
+              await this.syncTracksOnConnection(pc);
+              await this.sendOffer(peerId, entry);
+            }
+          });
         }
       }, 2800);
     }
@@ -1147,11 +1226,9 @@ export class WebRTCMeshManager {
     const peerObj = this.peers.get(fromPeerId);
     if (!peerObj) return;
 
-    peerObj.signalQueue = peerObj.signalQueue
-      .catch(() => {})
-      .then(() => this.processSignal(fromPeerId, peerObj, signal));
-
-    return peerObj.signalQueue;
+    return this.enqueuePeerTask(fromPeerId, peerObj, () =>
+      this.processSignal(fromPeerId, peerObj, signal)
+    );
   }
 
   private async processSignal(
@@ -1401,11 +1478,97 @@ export class WebRTCMeshManager {
     }
   }
 
+  public async getDiagnostics(): Promise<WebRTCDiagnosticsSnapshot> {
+    const hasTurn = Boolean(this.runtimeHasTurn ?? hasTurnConfiguration());
+    const localAudioTracks =
+      this.localStream?.getAudioTracks().filter((t) => t.readyState !== "ended" && t.enabled).length ?? 0;
+    const localVideoTracks =
+      (this.screenStream || this.localStream)
+        ?.getVideoTracks()
+        .filter((t) => t.readyState !== "ended" && t.enabled).length ?? 0;
+
+    const peers: PeerDiagnosticEntry[] = [];
+    for (const [peerId, entry] of this.peers) {
+      const { pc } = entry;
+      const candTypes = new Set<string>();
+      let videoPacketsSent = 0;
+      let videoPacketsReceived = 0;
+      let audioPacketsSent = 0;
+      let audioPacketsReceived = 0;
+
+      if (typeof pc.getStats === "function") {
+        try {
+          const stats = await pc.getStats();
+          stats.forEach((r: any) => {
+            if (r.type === "local-candidate" && r.candidateType) {
+              candTypes.add(`L:${r.candidateType}`);
+            } else if (r.type === "remote-candidate" && r.candidateType) {
+              candTypes.add(`R:${r.candidateType}`);
+            } else if (r.type === "outbound-rtp") {
+              if (r.kind === "video" || r.mediaType === "video") {
+                videoPacketsSent += Number(r.packetsSent || 0);
+              } else if (r.kind === "audio" || r.mediaType === "audio") {
+                audioPacketsSent += Number(r.packetsSent || 0);
+              }
+            } else if (r.type === "inbound-rtp") {
+              if (r.kind === "video" || r.mediaType === "video") {
+                videoPacketsReceived += Number(r.packetsReceived || 0);
+              } else if (r.kind === "audio" || r.mediaType === "audio") {
+                audioPacketsReceived += Number(r.packetsReceived || 0);
+              }
+            }
+          });
+        } catch {
+          // Ignore stats query errors on closing connections
+        }
+      }
+
+      peers.push({
+        peerId,
+        role: entry.role,
+        iceConnectionState: pc.iceConnectionState || "unknown",
+        connectionState: pc.connectionState || "unknown",
+        signalingState: pc.signalingState || "unknown",
+        iceGatheringState: pc.iceGatheringState || "unknown",
+        candidateTypes: Array.from(candTypes),
+        videoPacketsSent,
+        videoPacketsReceived,
+        audioPacketsSent,
+        audioPacketsReceived,
+      });
+    }
+
+    return {
+      hasTurn,
+      localAudioTracks,
+      localVideoTracks,
+      cameraError: this.cameraError,
+      micError: this.micError,
+      peers,
+    };
+  }
+
+  public async forceReconnectPendingPeers(): Promise<void> {
+    if (this.destroyed) return;
+    for (const [peerId, entry] of this.peers) {
+      const { pc } = entry;
+      if (pc.connectionState !== "connected" && pc.iceConnectionState !== "connected") {
+        pc.restartIce?.();
+        await this.enqueuePeerTask(peerId, entry, async () => {
+          if (pc.signalingState === "stable") {
+            await this.sendOffer(peerId, entry);
+          }
+        });
+      }
+    }
+  }
+
   public disconnectPeer(peerId: string): void {
     const peerObj = this.peers.get(peerId);
     if (peerObj) {
       if (peerObj.fallbackTimer) clearTimeout(peerObj.fallbackTimer);
       if (peerObj.disconnectTimer) clearTimeout(peerObj.disconnectTimer);
+      if (peerObj.slowTimer) clearTimeout(peerObj.slowTimer);
       this.teardownPeerMedia(peerObj.remoteMedia);
       peerObj.pc.close();
       this.peers.delete(peerId);
@@ -1418,6 +1581,7 @@ export class WebRTCMeshManager {
     for (const [, peerObj] of this.peers) {
       if (peerObj.fallbackTimer) clearTimeout(peerObj.fallbackTimer);
       if (peerObj.disconnectTimer) clearTimeout(peerObj.disconnectTimer);
+      if (peerObj.slowTimer) clearTimeout(peerObj.slowTimer);
       this.teardownPeerMedia(peerObj.remoteMedia);
       peerObj.pc.close();
     }

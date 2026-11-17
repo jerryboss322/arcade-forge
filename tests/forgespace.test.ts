@@ -1923,4 +1923,106 @@ describe("Boss/Admin Auth, Passworded Links, Free/Pro Limits & Ephemeral TURN", 
       Object.defineProperty(globalThis, "navigator", { configurable: true, value: origNav });
     }
   });
+
+  it("fires onSlowConnection after 7s stuck connecting and collects diagnostics snapshot", async () => {
+    vi.useFakeTimers();
+    const origPC = globalThis.RTCPeerConnection;
+    const origNav = globalThis.navigator;
+    let mockPc: {
+      signalingState: string;
+      connectionState: string;
+      iceConnectionState: string;
+      iceGatheringState: string;
+      restarted: number;
+    } | null = null;
+
+    class DiagMockPC {
+      signalingState = "stable";
+      connectionState = "connecting";
+      iceConnectionState = "checking";
+      iceGatheringState = "complete";
+      restarted = 0;
+      addTransceiver() {
+        return {
+          mid: null,
+          currentDirection: "recvonly",
+          direction: "recvonly",
+          sender: { track: null, replaceTrack: async () => {} },
+          receiver: { track: { kind: "audio" } },
+        };
+      }
+      getTransceivers() {
+        return [];
+      }
+      createDataChannel() {
+        return {};
+      }
+      async createOffer() {
+        return { type: "offer", sdp: "v=0" };
+      }
+      async setLocalDescription() {}
+      restartIce() {
+        this.restarted++;
+      }
+      async getStats() {
+        const rows: Array<[string, Record<string, unknown>]> = [
+          ["c1", { type: "local-candidate", candidateType: "srflx" }],
+          ["r1", { type: "remote-candidate", candidateType: "host" }],
+          ["o1", { type: "outbound-rtp", kind: "video", packetsSent: 12 }],
+          ["i1", { type: "inbound-rtp", kind: "video", packetsReceived: 24 }],
+        ];
+        return new Map(rows);
+      }
+      close() {}
+    }
+
+    (globalThis as unknown as Record<string, unknown>).RTCPeerConnection = function MockCtor() {
+      const pc = new DiagMockPC();
+      mockPc = pc;
+      return pc;
+    };
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: {} });
+
+    const slowAlerts: Array<{ peerId: string; hasTurn: boolean }> = [];
+    const mesh = new WebRTCMeshManager(
+      () => {},
+      () => {},
+      () => {},
+      "peer_diag_a",
+      undefined,
+      undefined,
+      {
+        onSlowConnection: (peerId, details) => slowAlerts.push({ peerId, ...details }),
+      }
+    );
+
+    try {
+      await mesh.connectToPeer("peer_diag_b", true);
+      expect(slowAlerts).toHaveLength(0);
+
+      await vi.advanceTimersByTimeAsync(7100);
+      expect(slowAlerts).toEqual([{ peerId: "peer_diag_b", hasTurn: false }]);
+
+      const snap = await mesh.getDiagnostics();
+      expect(snap.hasTurn).toBe(false);
+      expect(snap.peers).toHaveLength(1);
+      expect(snap.peers[0]).toMatchObject({
+        peerId: "peer_diag_b",
+        role: "initiator",
+        iceConnectionState: "checking",
+        videoPacketsSent: 12,
+        videoPacketsReceived: 24,
+      });
+      expect(snap.peers[0]!.candidateTypes).toContain("L:srflx");
+      expect(snap.peers[0]!.candidateTypes).toContain("R:host");
+
+      await mesh.forceReconnectPendingPeers();
+      expect(mockPc!.restarted).toBe(1);
+    } finally {
+      vi.useRealTimers();
+      mesh.destroy();
+      (globalThis as unknown as Record<string, unknown>).RTCPeerConnection = origPC;
+      Object.defineProperty(globalThis, "navigator", { configurable: true, value: origNav });
+    }
+  });
 });
