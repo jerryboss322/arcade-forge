@@ -343,6 +343,61 @@ export class WebRTCMeshManager {
     return this.localMediaPromise;
   }
 
+  /**
+   * Adopts an already-captured MediaStream from the Pre-Join Device Lobby so WebRTC
+   * never re-prompts for hardware permissions or triggers device-busy errors on room entry.
+   */
+  public adoptPreJoinedStream(
+    stream: MediaStream | null,
+    opts: {
+      audioEnabled: boolean;
+      videoEnabled: boolean;
+      cameraFacing?: "user" | "environment";
+      cameraError?: string | null;
+      micError?: string | null;
+    }
+  ): LocalMediaInitResult {
+    this.cameraFacing = opts.cameraFacing ?? "user";
+    this.cameraError = opts.cameraError ?? null;
+    this.micError = opts.micError ?? null;
+
+    if (stream) {
+      for (const t of stream.getAudioTracks()) {
+        t.enabled = opts.audioEnabled;
+        this.attachTrackEndedListener(t, "audio");
+      }
+      for (const t of stream.getVideoTracks()) {
+        t.enabled = opts.videoEnabled;
+        this.attachTrackEndedListener(t, "video");
+      }
+      this.localStream = stream;
+      this.setupLocalAnalyser(stream);
+    } else {
+      this.localStream = null;
+    }
+
+    const hasAudio = Boolean(
+      stream?.getAudioTracks().some((t) => t.readyState !== "ended" && t.enabled)
+    );
+    const hasVideo = Boolean(
+      stream?.getVideoTracks().some((t) => t.readyState !== "ended" && t.enabled)
+    );
+    this.isAudioMuted = !hasAudio;
+    this.isVideoMuted = !hasVideo;
+
+    const result: LocalMediaInitResult = {
+      stream,
+      hasAudio,
+      hasVideo,
+      cameraError: this.cameraError,
+      micError: this.micError,
+    };
+    this.localMediaPromise = Promise.resolve(result);
+    this.startVoiceActivityDetection();
+    this.emitLocalMediaChange();
+    return result;
+  }
+
   private emitLocalMediaChange(): void {
     const stream = this.screenStream || this.localStream;
     const hasAudio = Boolean(

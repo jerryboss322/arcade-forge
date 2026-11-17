@@ -26,6 +26,8 @@ import {
   hasAttachedVideoTrack,
 } from "../src/components/space/StreamVideo";
 import { GET, POST } from "../src/app/api/space/peers/route";
+import { POST as POST_LIVEKIT_TOKEN } from "../src/app/api/space/livekit/token/route";
+import { TokenVerifier } from "livekit-server-sdk";
 import { SpaceSignaling } from "../src/lib/space/signaling";
 import {
   getRedisRestConfig,
@@ -2022,6 +2024,161 @@ describe("Boss/Admin Auth, Passworded Links, Free/Pro Limits & Ephemeral TURN", 
       vi.useRealTimers();
       mesh.destroy();
       (globalThis as unknown as Record<string, unknown>).RTCPeerConnection = origPC;
+      Object.defineProperty(globalThis, "navigator", { configurable: true, value: origNav });
+    }
+  });
+
+  it("issues LiveKit SFU JWT when configured, falls back to P2P mode when unset, and enforces room auth", async () => {
+    const prevUrl = process.env.LIVEKIT_URL;
+    const prevKey = process.env.LIVEKIT_API_KEY;
+    const prevSecret = process.env.LIVEKIT_API_SECRET;
+    const protectedSlug = "lk-locked-room";
+
+    try {
+      delete process.env.LIVEKIT_URL;
+      delete process.env.LIVEKIT_API_KEY;
+      delete process.env.LIVEKIT_API_SECRET;
+
+      const p2pRes = await POST_LIVEKIT_TOKEN(
+        new Request("http://localhost/api/space/livekit/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ channel: "acme-hq", peerId: "peer_lk_1", name: "Alice" }),
+        })
+      );
+      expect(p2pRes.status).toBe(200);
+      const p2pJson = (await p2pRes.json()) as { mode: string };
+      expect(p2pJson.mode).toBe("p2p");
+
+      // Protected workspace without cookie -> 401
+      await syncWorkspacePolicyCache({
+        slug: protectedSlug,
+        name: "Locked HQ",
+        ownerId: "boss_lk_1",
+        planTier: "PRO",
+        passcode: "secret123",
+      });
+      const deniedRes = await POST_LIVEKIT_TOKEN(
+        new Request("http://localhost/api/space/livekit/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ channel: protectedSlug, peerId: "peer_lk_2", name: "Bob" }),
+        })
+      );
+      expect(deniedRes.status).toBe(401);
+
+      // Configured LiveKit -> issues verifiable signed room token for unlocked guest
+      process.env.LIVEKIT_URL = "wss://forgespace.livekit.cloud";
+      process.env.LIVEKIT_API_KEY = "devkey";
+      process.env.LIVEKIT_API_SECRET = "secret_key_for_unit_test_1234567890";
+
+      const empToken = grantSpaceAccessToken(undefined, protectedSlug);
+      const lkRes = await POST_LIVEKIT_TOKEN(
+        new Request("http://localhost/api/space/livekit/token", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            cookie: `${SPACE_COOKIE_NAME}=${encodeURIComponent(empToken)}`,
+          },
+          body: JSON.stringify({
+            channel: protectedSlug,
+            peerId: "peer_lk_2",
+            name: "Bob",
+            avatarColor: "#37E6C4",
+          }),
+        })
+      );
+      expect(lkRes.status).toBe(200);
+      const lkJson = (await lkRes.json()) as {
+        mode: string;
+        url: string;
+        token: string;
+        roomName: string;
+      };
+      expect(lkJson.mode).toBe("livekit");
+      expect(lkJson.url).toBe("wss://forgespace.livekit.cloud");
+      expect(lkJson.roomName).toBe(`forgespace_${protectedSlug}`);
+
+      const verifier = new TokenVerifier("devkey", "secret_key_for_unit_test_1234567890");
+      const claims = await verifier.verify(lkJson.token);
+      expect(claims.sub).toBe("peer_lk_2");
+      expect(claims.video?.room).toBe(`forgespace_${protectedSlug}`);
+      expect(claims.video?.roomJoin).toBe(true);
+    } finally {
+      await clearWorkspacePolicyCache(protectedSlug);
+      if (prevUrl === undefined) delete process.env.LIVEKIT_URL;
+      else process.env.LIVEKIT_URL = prevUrl;
+      if (prevKey === undefined) delete process.env.LIVEKIT_API_KEY;
+      else process.env.LIVEKIT_API_KEY = prevKey;
+      if (prevSecret === undefined) delete process.env.LIVEKIT_API_SECRET;
+      else process.env.LIVEKIT_API_SECRET = prevSecret;
+    }
+  });
+
+  it("adopts pre-joined lobby MediaStream tracks without re-invoking getUserMedia", async () => {
+    const origNav = globalThis.navigator;
+    let gumCalls = 0;
+    Object.defineProperty(globalThis, "navigator", {
+      configurable: true,
+      value: {
+        mediaDevices: {
+          getUserMedia: async () => {
+            gumCalls++;
+            throw new Error("Should not re-acquire hardware");
+          },
+        },
+      },
+    });
+
+    const audioTrack = {
+      kind: "audio",
+      enabled: true,
+      readyState: "live",
+      stop() {},
+      addEventListener() {},
+      removeEventListener() {},
+    };
+    const videoTrack = {
+      kind: "video",
+      enabled: true,
+      readyState: "live",
+      stop() {},
+      addEventListener() {},
+      removeEventListener() {},
+    };
+    const mockStream = {
+      getTracks: () => [audioTrack, videoTrack],
+      getAudioTracks: () => [audioTrack],
+      getVideoTracks: () => [videoTrack],
+    } as unknown as MediaStream;
+
+    const statusUpdates: boolean[] = [];
+    const mesh = new WebRTCMeshManager(
+      () => {},
+      () => {},
+      () => {},
+      "peer_adopt",
+      undefined,
+      undefined,
+      {
+        onLocalMediaChange: ({ status }) => statusUpdates.push(status.hasVideo),
+      }
+    );
+
+    try {
+      const res = mesh.adoptPreJoinedStream(mockStream, {
+        audioEnabled: true,
+        videoEnabled: false,
+        cameraFacing: "environment",
+      });
+      expect(gumCalls).toBe(0);
+      expect(res.hasAudio).toBe(true);
+      expect(res.hasVideo).toBe(false);
+      expect(videoTrack.enabled).toBe(false);
+      expect(mesh.cameraFacing).toBe("environment");
+      expect(statusUpdates).toContain(false);
+    } finally {
+      mesh.destroy();
       Object.defineProperty(globalThis, "navigator", { configurable: true, value: origNav });
     }
   });

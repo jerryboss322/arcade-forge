@@ -58,6 +58,8 @@ export class SpaceSignaling {
   private dataChannels = new Map<string, RTCDataChannel>();
   private edgeSendQueue: Promise<void> = Promise.resolve();
   private pageHideHandler: (() => void) | null = null;
+  private burstUntil = 0;
+  private lastBurstPollAt = 0;
   public localPeer: PeerState;
 
   constructor(
@@ -248,11 +250,13 @@ export class SpaceSignaling {
   }
 
   private scheduleFastPoll(): void {
-    if (this.destroyed || this.fastPollTimer) return;
+    if (this.destroyed) return;
+    this.burstUntil = Date.now() + 5000;
+    if (this.fastPollTimer) return;
     this.fastPollTimer = setTimeout(() => {
       this.fastPollTimer = null;
       void this.pollEdge();
-    }, 120);
+    }, 100);
   }
 
   private async pollEdge(): Promise<void> {
@@ -351,13 +355,25 @@ export class SpaceSignaling {
     window.addEventListener("pagehide", this.pageHideHandler);
 
     // Send initial join and fetch active coworkers immediately
+    this.burstUntil = Date.now() + 5000;
     this.broadcast({ type: "peer_join", peer: this.localPeer });
     void this.pollEdge();
 
-    // Poll edge for remote peer messages & WebRTC signals every 1s using incremental cursor
+    // Adaptive poll: 350ms during initial join/ICE handshake burst, 1000ms steady-state
     this.pollInterval = setInterval(() => {
-      void this.pollEdge();
-    }, 1000);
+      const now = Date.now();
+      if (now < this.burstUntil) {
+        if (now - this.lastBurstPollAt >= 320) {
+          this.lastBurstPollAt = now;
+          void this.pollEdge();
+        }
+        return;
+      }
+      if (now - this.lastBurstPollAt >= 950) {
+        this.lastBurstPollAt = now;
+        void this.pollEdge();
+      }
+    }, 350);
 
     // Periodic presence heartbeat (every 10s) so newly joined users discover existing peers
     this.heartbeatInterval = setInterval(() => {

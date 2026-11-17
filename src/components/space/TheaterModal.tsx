@@ -18,8 +18,15 @@ export function TheaterModal({
   stream,
 }: TheaterModalProps) {
   const videoTracks = stream?.getVideoTracks() ?? [];
-  const hasLiveVideoTrack = videoTracks.some((t) => t.readyState === "live" && t.enabled);
-  const hasActiveFrames = videoTracks.some((t) => t.readyState === "live" && !t.muted);
+  const hasLiveVideoTrack = videoTracks.some((t) => t.readyState !== "ended" && t.enabled);
+
+  const connectingOverlay = (
+    <div className="w-full h-full flex items-center justify-center bg-black/75">
+      <span className="px-3 py-1.5 rounded-full bg-surface/90 border border-border text-xs font-display text-text animate-pulse">
+        Connecting live presentation stream...
+      </span>
+    </div>
+  );
 
   return (
     <ArcadeDialog
@@ -32,16 +39,11 @@ export function TheaterModal({
         {/* HD Theater Presentation Screen */}
         <div className="relative aspect-video w-full bg-black rounded-container border-2 border-border overflow-hidden flex items-center justify-center">
           {stream && hasLiveVideoTrack ? (
-            <>
-              <StreamVideo stream={stream} className="w-full h-full object-contain" />
-              {!hasActiveFrames && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/60 pointer-events-none">
-                  <span className="px-3 py-1.5 rounded-full bg-surface/90 border border-border text-xs font-display text-text animate-pulse">
-                    Connecting live presentation stream...
-                  </span>
-                </div>
-              )}
-            </>
+            <StreamVideo
+              stream={stream}
+              className="w-full h-full object-contain"
+              fallback={connectingOverlay}
+            />
           ) : (
             <div className="text-center p-8 space-y-2">
               <span className="text-4xl block">📊</span>
@@ -60,7 +62,7 @@ export function TheaterModal({
         <div className="flex items-center justify-between text-xs text-text-muted pt-1">
           <span className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            <span>HD Presentation Feed (Direct P2P WebRTC)</span>
+            <span>HD Presentation Feed</span>
           </span>
           <button
             type="button"

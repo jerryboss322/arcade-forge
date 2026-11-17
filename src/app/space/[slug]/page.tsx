@@ -3,8 +3,8 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useArcade } from "@/components/providers/ArcadeProvider";
 import { RESERVED_SPACE_SLUGS } from "@/lib/plans";
+import { PreJoinConfig, PreJoinLobby } from "@/components/space/PreJoinLobby";
 import { SpaceView } from "@/components/space/SpaceView";
 
 function isPublicDemoSlug(slug: string): boolean {
@@ -36,10 +36,15 @@ interface AccessInfo {
   isOwner: boolean;
 }
 
+function pickAvatarColor(seed: string): string {
+  const palette = ["#37E6C4", "#FF0055", "#FFC53D", "#00A8FF", "#B84DFF", "#FF7A00"];
+  const hash = Math.abs(seed.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0));
+  return palette[hash % palette.length] || "#37E6C4";
+}
+
 export default function SpaceSlugPage() {
   const params = useParams<{ slug: string }>();
   const slug = (params?.slug || "acme-hq").toLowerCase();
-  const { currentUser } = useArcade();
 
   const [access, setAccess] = useState<AccessInfo | null>(() =>
     isPublicDemoSlug(slug)
@@ -53,42 +58,56 @@ export default function SpaceSlugPage() {
         }
       : null
   );
+  const [suggestedName, setSuggestedName] = useState<string>("Teammate");
   const [passcodeInput, setPasscodeInput] = useState("");
-  const [guestName, setGuestName] = useState("");
-  const [nameConfirmed, setNameConfirmed] = useState(false);
   const [unlockError, setUnlockError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
+  const [preJoin, setPreJoin] = useState<PreJoinConfig | null>(null);
 
   const preset = SPACE_PRESETS[slug] || {
     name: slug
       .split("-")
       .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
       .join(" "),
-    description: "Custom virtual office powered by ForgeSpace P2P mesh.",
+    description: "Custom virtual office powered by ForgeSpace.",
   };
 
   useEffect(() => {
-    if (isPublicDemoSlug(slug)) return;
     let cancelled = false;
+
     const savedName =
       typeof window !== "undefined"
         ? sessionStorage.getItem(`forgespace_guest_name_${slug}`)
         : null;
     if (savedName) {
-      setGuestName(savedName);
-      setNameConfirmed(true);
-    } else if (currentUser?.username) {
-      setGuestName(currentUser.username === "nova_pixel" ? "" : currentUser.username);
+      setSuggestedName(savedName);
     }
 
-    async function checkAccess() {
+    async function hydrateAccessAndBoss() {
+      // Check optional signed-in Boss account cleanly (never mock users)
+      if (!savedName) {
+        try {
+          const authRes = await fetch("/api/auth/me", { cache: "no-store" });
+          if (authRes.ok) {
+            const authData = (await authRes.json()) as {
+              user?: { username?: string } | null;
+            };
+            if (!cancelled && authData?.user?.username) {
+              setSuggestedName(authData.user.username);
+            }
+          }
+        } catch {
+          // Guest user continues cleanly
+        }
+      }
+
+      if (isPublicDemoSlug(slug)) return;
+
       try {
         const res = await fetch(`/api/workspaces/${encodeURIComponent(slug)}/access`, {
           cache: "no-store",
         });
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
-        }
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         let info = (await res.json()) as AccessInfo;
 
         const queryCode =
@@ -129,7 +148,6 @@ export default function SpaceSlugPage() {
           setAccess(info);
         }
       } catch {
-        // Fallback to public demo access on unowned/offline demo presets
         if (!cancelled) {
           setAccess({
             isManaged: false,
@@ -143,76 +161,65 @@ export default function SpaceSlugPage() {
       }
     }
 
-    void checkAccess();
+    void hydrateAccessAndBoss();
     return () => {
       cancelled = true;
     };
-  }, [slug, currentUser?.username]);
+  }, [slug]);
 
-  const handleGateSubmit = async (e: React.FormEvent) => {
+  const handlePasscodeUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!access) return;
     setUnlockError(null);
-
-    if (!access.unlocked) {
-      setVerifying(true);
-      try {
-        const res = await fetch(`/api/workspaces/${encodeURIComponent(slug)}/unlock`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ passcode: passcodeInput }),
-        });
-        const data = (await res.json().catch(() => ({}))) as {
-          error?: string;
-          name?: string;
-          planTier?: string;
-          maxParticipants?: number;
-          allowScreenShare?: boolean;
-        };
-        if (!res.ok) {
-          setUnlockError(data.error || "Incorrect workspace passcode.");
-          return;
-        }
-        setAccess((prev) =>
-          prev
-            ? {
-                ...prev,
-                unlocked: true,
-                name: data.name ?? prev.name,
-                planTier: data.planTier ?? prev.planTier,
-                maxParticipants: data.maxParticipants ?? prev.maxParticipants,
-                allowScreenShare: data.allowScreenShare ?? prev.allowScreenShare,
-              }
-            : prev
-        );
-      } finally {
-        setVerifying(false);
+    setVerifying(true);
+    try {
+      const res = await fetch(`/api/workspaces/${encodeURIComponent(slug)}/unlock`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ passcode: passcodeInput }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        name?: string;
+        planTier?: string;
+        maxParticipants?: number;
+        allowScreenShare?: boolean;
+      };
+      if (!res.ok) {
+        setUnlockError(data.error || "Incorrect workspace passcode.");
+        return;
       }
+      setAccess((prev) =>
+        prev
+          ? {
+              ...prev,
+              unlocked: true,
+              name: data.name ?? prev.name,
+              planTier: data.planTier ?? prev.planTier,
+              maxParticipants: data.maxParticipants ?? prev.maxParticipants,
+              allowScreenShare: data.allowScreenShare ?? prev.allowScreenShare,
+            }
+          : prev
+      );
+    } finally {
+      setVerifying(false);
     }
-
-    const cleanName = guestName.trim().slice(0, 24) || "Teammate";
-    setGuestName(cleanName);
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem(`forgespace_guest_name_${slug}`, cleanName);
-    }
-    setNameConfirmed(true);
   };
 
   if (!access) {
     return (
-      <div className="min-h-[70vh] flex items-center justify-center p-4">
-        <div className="text-xs font-mono text-text-muted animate-pulse">
-          Checking workspace access...
-        </div>
+      <div className="min-h-screen bg-bg flex items-center justify-center text-text font-display text-sm">
+        Checking workspace access...
       </div>
     );
   }
 
-  if (access.isManaged && (!access.unlocked || (!access.isOwner && !nameConfirmed))) {
+  // Step 1: Passcode Gate for protected team workspaces
+  if (access.isManaged && !access.unlocked) {
     return (
-      <div className="min-h-[85vh] flex items-center justify-center px-4 py-12">
+      <div className="min-h-screen bg-bg flex items-center justify-center p-4">
         <form
-          onSubmit={handleGateSubmit}
+          onSubmit={handlePasscodeUnlock}
           className="w-full max-w-md p-6 rounded-container bg-surface border-2 border-border shadow-arcade space-y-4"
         >
           <div className="space-y-1">
@@ -223,9 +230,7 @@ export default function SpaceSlugPage() {
               {access.name || preset.name}
             </h1>
             <p className="text-xs text-text-muted">
-              {access.unlocked
-                ? "Link verified! Enter your display name to join your team (no account needed)."
-                : "Enter the workspace passcode shared by your admin to unlock this office."}
+              Enter the workspace passcode shared by your admin to unlock this office.
             </p>
           </div>
 
@@ -235,34 +240,17 @@ export default function SpaceSlugPage() {
             </div>
           )}
 
-          {!access.unlocked && (
-            <div>
-              <label className="block text-xs font-display text-text mb-1">
-                Workspace Passcode
-              </label>
-              <input
-                type="password"
-                required
-                value={passcodeInput}
-                onChange={(e) => setPasscodeInput(e.target.value)}
-                placeholder="Enter room passcode"
-                className="w-full px-3 py-2 text-xs bg-bg border border-border rounded-control text-text font-mono focus:outline-none focus:border-accent"
-              />
-            </div>
-          )}
-
           <div>
             <label className="block text-xs font-display text-text mb-1">
-              Your Display Name
+              Workspace Passcode
             </label>
             <input
-              type="text"
+              type="password"
               required
-              maxLength={24}
-              value={guestName}
-              onChange={(e) => setGuestName(e.target.value)}
-              placeholder="e.g. Sarah"
-              className="w-full px-3 py-2 text-xs bg-bg border border-border rounded-control text-text focus:outline-none focus:border-accent"
+              value={passcodeInput}
+              onChange={(e) => setPasscodeInput(e.target.value)}
+              placeholder="Enter room passcode"
+              className="w-full px-3 py-2 text-xs bg-bg border border-border rounded-control text-text font-mono focus:outline-none focus:border-accent"
             />
           </div>
 
@@ -271,7 +259,7 @@ export default function SpaceSlugPage() {
             disabled={verifying}
             className="w-full py-2.5 bg-accent text-bg font-display font-bold text-xs uppercase rounded-control shadow-arcade hover:brightness-110 disabled:opacity-60"
           >
-            {verifying ? "Verifying..." : "Join Office with Mic & Video →"}
+            {verifying ? "Verifying..." : "Unlock Office →"}
           </button>
 
           <div className="pt-2 border-t border-border flex items-center justify-between text-[11px] text-text-muted">
@@ -285,26 +273,41 @@ export default function SpaceSlugPage() {
     );
   }
 
-  const resolvedUserName =
-    access.isManaged && guestName.trim()
-      ? guestName.trim()
-      : currentUser?.username || "Guest";
+  // Step 2: Mandatory Pre-Join Hardware Device Lobby (camera, mic meter, device selector, audio unlock)
+  if (!preJoin) {
+    return (
+      <PreJoinLobby
+        spaceName={access.name || preset.name}
+        planTier={access.planTier}
+        maxParticipants={access.maxParticipants}
+        isManagedWorkspace={access.isManaged}
+        initialName={suggestedName}
+        initialColor={pickAvatarColor(suggestedName)}
+        onJoin={(config) => {
+          if (typeof window !== "undefined") {
+            sessionStorage.setItem(`forgespace_guest_name_${slug}`, config.name);
+          }
+          setPreJoin(config);
+        }}
+      />
+    );
+  }
 
-  const avatarColors = ["#37E6C4", "#FF0055", "#FFC53D", "#00A8FF", "#B84DFF", "#FF7A00"];
-  const colorIndex =
-    Math.abs(
-      resolvedUserName
-        .split("")
-        .reduce((acc, c) => acc + c.charCodeAt(0), 0)
-    ) % avatarColors.length;
-  const avatarColor = avatarColors[colorIndex];
-
+  // Step 3: Live Connected Room (LiveKit SFU or Redis + P2P Mesh)
   return (
     <SpaceView
       spaceSlug={slug}
       spaceName={access.name || preset.name}
-      initialUserName={resolvedUserName}
-      initialAvatarColor={avatarColor}
+      initialUserName={preJoin.name}
+      initialAvatarColor={preJoin.avatarColor}
+      initialStatus={preJoin.status}
+      initialViewMode={preJoin.initialViewMode}
+      initialMedia={{
+        audioEnabled: preJoin.audioEnabled,
+        videoEnabled: preJoin.videoEnabled,
+        cameraFacing: preJoin.cameraFacing,
+        stream: preJoin.stream,
+      }}
       allowScreenShare={access.allowScreenShare}
       maxParticipants={access.maxParticipants}
       planTier={access.planTier}
