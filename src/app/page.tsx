@@ -232,12 +232,12 @@ export default function HomePage() {
           {/* Right Column: Interactive Architectural Office Preview Card */}
           <div className="lg:col-span-5">
             <div className="rounded-container border border-white/10 bg-bg/90 p-5 shadow-arcade space-y-4">
-              <div className="flex items-center justify-between border-b border-white/[0.08] pb-3">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.08] pb-3">
                 <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-accent" />
-                  <span className="font-mono text-xs text-text">/space/acme-hq</span>
+                  <span className="w-2.5 h-2.5 rounded-full bg-accent shrink-0" />
+                  <span className="font-mono text-xs text-text whitespace-nowrap">/space/acme-hq</span>
                 </div>
-                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-accent/15 text-accent border border-accent/30">
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-mono bg-accent/15 text-accent border border-accent/30 whitespace-nowrap shrink-0">
                   Isometric 3D · Spatial Audio
                 </span>
               </div>
@@ -473,7 +473,7 @@ export default function HomePage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
+          <table className="w-full min-w-[580px] text-left text-xs border-collapse">
             <thead>
               <tr className="border-b border-white/10 text-text-muted font-display uppercase tracking-wider text-[11px]">
                 <th className="py-3 px-4">Capability</th>

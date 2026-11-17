@@ -100,7 +100,7 @@ export function GlobalHeader() {
   return (
     <>
       <header className="sticky top-0 z-40 h-16 bg-bg/80 backdrop-blur-xl border-b border-white/[0.08]">
-        <div className="max-w-[1280px] mx-auto h-full px-4 md:px-8 flex items-center justify-between gap-4">
+        <div className="max-w-[1280px] mx-auto h-full px-3 sm:px-6 md:px-8 flex items-center justify-between gap-2 sm:gap-4">
           {/* Left: Brand + Consolidated Navigation */}
           <div className="flex items-center gap-6">
             <Link
@@ -193,10 +193,10 @@ export function GlobalHeader() {
           </form>
 
           {/* Right: Demo + Create Space + Boss Auth */}
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <Link
               href="/space/acme-hq"
-              className="hidden sm:inline-flex h-9 px-3 rounded-control text-xs font-medium bg-surface-2/80 border border-white/10 text-text hover:border-accent/60 items-center gap-2 transition-colors"
+              className="hidden sm:inline-flex h-9 px-3 rounded-control text-xs font-medium bg-surface-2/80 border border-white/10 text-text hover:border-accent/60 items-center gap-2 transition-colors whitespace-nowrap"
             >
               <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
               <span>Live Demo</span>
@@ -205,10 +205,11 @@ export function GlobalHeader() {
             <button
               type="button"
               onClick={() => setCreateModalOpen(true)}
-              className="h-9 px-3.5 rounded-control bg-accent hover:brightness-110 text-bg font-display font-semibold text-xs shadow-arcade-sm active:scale-[0.98] transition-all inline-flex items-center gap-1.5"
+              className="h-9 px-2.5 sm:px-3.5 rounded-control bg-accent hover:brightness-110 text-bg font-display font-semibold text-xs shadow-arcade-sm active:scale-[0.98] transition-all inline-flex items-center gap-1.5 whitespace-nowrap"
             >
-              <IconPlus className="w-3.5 h-3.5" />
-              <span>New Space</span>
+              <IconPlus className="w-3.5 h-3.5 shrink-0" />
+              <span className="sm:hidden">New</span>
+              <span className="hidden sm:inline">New Space</span>
             </button>
 
             {bossUser ? (
@@ -218,9 +219,9 @@ export function GlobalHeader() {
                   onClick={() => setUserMenuOpen((v) => !v)}
                   aria-label="Boss account menu"
                   aria-expanded={userMenuOpen}
-                  className="h-9 px-2.5 rounded-control bg-surface border border-white/10 hover:border-accent/60 flex items-center gap-2 transition-colors"
+                  className="h-9 px-2.5 rounded-control bg-surface border border-white/10 hover:border-accent/60 flex items-center gap-2 transition-colors whitespace-nowrap"
                 >
-                  <span className="w-5 h-5 rounded-full bg-accent/20 text-accent flex items-center justify-center text-[10px] font-bold border border-accent/40">
+                  <span className="w-5 h-5 rounded-full bg-accent/20 text-accent flex items-center justify-center text-[10px] font-bold border border-accent/40 shrink-0">
                     {bossUser.username.slice(0, 1).toUpperCase()}
                   </span>
                   <span className="hidden sm:inline text-xs font-medium text-text">
@@ -266,9 +267,10 @@ export function GlobalHeader() {
             ) : (
               <Link
                 href="/admin"
-                className="h-9 px-3 rounded-control bg-surface border border-white/10 hover:border-white/25 inline-flex items-center text-xs font-medium text-text transition-colors"
+                className="h-9 px-2.5 sm:px-3 rounded-control bg-surface border border-white/10 hover:border-white/25 inline-flex items-center text-xs font-medium text-text transition-colors whitespace-nowrap"
               >
-                Boss Sign In
+                <span className="sm:hidden">Admin</span>
+                <span className="hidden sm:inline">Boss Sign In</span>
               </Link>
             )}
           </div>

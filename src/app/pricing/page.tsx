@@ -235,7 +235,7 @@ export default function PricingPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs border-collapse">
+          <table className="w-full min-w-[600px] text-left text-xs border-collapse">
             <thead>
               <tr className="border-b border-white/10 text-text-muted font-display uppercase tracking-wider text-[11px]">
                 <th className="py-3 px-4">Capability</th>

@@ -451,30 +451,30 @@ export function PreJoinLobby({
               </div>
 
               {/* Quick Media Controls Overlay */}
-              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2">
+              <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-2 whitespace-nowrap">
                 <button
                   type="button"
                   onClick={() => void handleToggleAudio()}
-                  className={`px-3 py-1.5 rounded-full text-xs font-display font-bold flex items-center gap-1.5 border shadow-sm backdrop-blur-md ${
+                  className={`px-3 py-1.5 rounded-full text-xs font-display font-bold whitespace-nowrap flex items-center gap-1.5 border shadow-sm backdrop-blur-md ${
                     audioEnabled
                       ? "bg-black/75 text-white border-white/20 hover:border-accent"
                       : "bg-red-500/90 text-white border-red-400"
                   }`}
                 >
-                  {audioEnabled ? <IconMic className="w-3.5 h-3.5" /> : <IconMicOff className="w-3.5 h-3.5" />}
+                  {audioEnabled ? <IconMic className="w-3.5 h-3.5 shrink-0" /> : <IconMicOff className="w-3.5 h-3.5 shrink-0" />}
                   <span>{audioEnabled ? "Mic On" : "Muted"}</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => void handleToggleVideo()}
-                  className={`px-3 py-1.5 rounded-full text-xs font-display font-bold flex items-center gap-1.5 border shadow-sm backdrop-blur-md ${
+                  className={`px-3 py-1.5 rounded-full text-xs font-display font-bold whitespace-nowrap flex items-center gap-1.5 border shadow-sm backdrop-blur-md ${
                     videoEnabled
                       ? "bg-black/75 text-white border-white/20 hover:border-accent"
                       : "bg-red-500/90 text-white border-red-400"
                   }`}
                 >
-                  {videoEnabled ? <IconVideo className="w-3.5 h-3.5" /> : <IconVideoOff className="w-3.5 h-3.5" />}
+                  {videoEnabled ? <IconVideo className="w-3.5 h-3.5 shrink-0" /> : <IconVideoOff className="w-3.5 h-3.5 shrink-0" />}
                   <span>{videoEnabled ? "Cam On" : "Cam Off"}</span>
                 </button>
 
