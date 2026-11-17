@@ -163,11 +163,6 @@ export default function HomePage() {
         <div className="relative grid grid-cols-1 lg:grid-cols-12 gap-8 lg:gap-10 items-center">
           {/* Left Copy Column */}
           <div className="lg:col-span-7 space-y-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.05] border border-white/10 text-xs font-medium text-text-muted">
-              <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-              <span>Powered by LiveKit Cloud SFU · Zero Employee Account Bloat</span>
-            </div>
-
             <h1 className="font-display text-3xl sm:text-4xl lg:text-5xl xl:text-[54px] font-extrabold text-text tracking-[-0.03em] leading-[1.08]">
               Your Remote Office,{" "}
               <span className="text-transparent bg-clip-text bg-gradient-to-r from-accent via-teal-200 to-indigo-300">
