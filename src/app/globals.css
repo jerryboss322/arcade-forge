@@ -3,20 +3,69 @@
 @tailwind utilities;
 
 :root {
-  --color-bg: #0B0C14;
-  --color-surface: #14162A;
-  --color-surface-2: #1D2040;
-  --color-border: #2B2F5A;
-  --color-text: #EDEEFF;
-  --color-text-muted: #9A9DC8;
-  --color-accent: #FF4D8D;
-  --color-accent-2: #37E6C4;
-  --color-warn: #FFC53D;
-  --color-danger: #FF5C5C;
+  color-scheme: dark;
+  accent-color: #2DD4BF;
+  scrollbar-color: #3E4A66 #090B10;
+  scrollbar-width: auto;
 
-  --font-display: "Silkscreen", "Pixelify Sans", "Courier New", ui-monospace, monospace;
-  --font-sans: "Geist", "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --color-bg: #090B10;
+  --color-surface: #111520;
+  --color-surface-2: #191F2E;
+  --color-border: #2C354A;
+  --color-border-strong: #5E6B8A;
+  --color-text: #F4F6FB;
+  --color-text-muted: #9DA8C2;
+  --color-accent: #2DD4BF;
+  --color-accent-2: #6366F1;
+  --color-warn: #FBBF24;
+  --color-danger: #F87171;
+
+  --font-display: "Plus Jakarta Sans", "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-sans: "Inter", "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+html {
+  color-scheme: dark;
+  scrollbar-gutter: stable;
+}
+
+::selection {
+  background-color: rgba(45, 212, 191, 0.28);
+  color: #F4F6FB;
+}
+
+input:not([type="range"]):user-invalid,
+textarea:user-invalid,
+select:user-invalid {
+  border-color: var(--color-danger);
+}
+
+input:not([type="range"]):user-valid,
+textarea:user-valid {
+  border-color: rgba(45, 212, 191, 0.55);
+}
+
+.cq-card {
+  container-type: inline-size;
+}
+
+.subgrid-card {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  grid-template-rows: subgrid;
+  grid-row: span 3;
+}
+
+@media (forced-colors: active) {
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  dialog {
+    border: 1px solid ButtonText;
+  }
 }
 
 * {
@@ -58,6 +107,27 @@ body {
 }
 
 /* Modern Web Guidance: Prevent underlying page from scrolling when modal <dialog> is open */
+dialog {
+  opacity: 0;
+  transform: translateY(10px) scale(0.98);
+  transition-property: opacity, transform, display, overlay;
+  transition-duration: 0.22s;
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
+  transition-behavior: allow-discrete;
+}
+
+dialog[open] {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+@starting-style {
+  dialog[open] {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+}
+
 dialog:modal {
   overscroll-behavior: contain;
 }
@@ -65,6 +135,31 @@ dialog:modal {
 dialog::backdrop {
   overflow: hidden;
   overscroll-behavior: contain;
+  background-color: rgba(5, 7, 12, 0.72);
+  backdrop-filter: blur(8px);
+  opacity: 0;
+  transition-property: opacity, display, overlay;
+  transition-duration: 0.22s;
+  transition-timing-function: ease-out;
+  transition-behavior: allow-discrete;
+}
+
+dialog[open]::backdrop {
+  opacity: 1;
+}
+
+@starting-style {
+  dialog[open]::backdrop {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  dialog,
+  dialog::backdrop {
+    transition: none;
+    transform: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

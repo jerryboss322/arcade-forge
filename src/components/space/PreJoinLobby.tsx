@@ -14,12 +14,12 @@ import {
 } from "@/components/space/SpaceIcons";
 
 const AVATAR_COLORS = [
-  "#37E6C4",
-  "#FF4D8D",
-  "#FFC53D",
-  "#00A8FF",
-  "#B84DFF",
-  "#FB923C",
+  "#2DD4BF",
+  "#6366F1",
+  "#38BDF8",
+  "#F59E0B",
+  "#A78BFA",
+  "#FB7185",
 ];
 
 export interface PreJoinConfig {
@@ -368,29 +368,33 @@ export function PreJoinLobby({
   );
 
   return (
-    <div className="min-h-screen w-full bg-bg flex items-center justify-center p-4">
+    <div className="min-h-dvh w-full bg-bg flex items-center justify-center p-4 relative overflow-hidden">
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute top-1/4 left-1/2 -translate-x-1/2 w-[520px] h-[520px] rounded-full bg-accent/10 blur-3xl"
+      />
       <form
         onSubmit={handleSubmit}
-        className="w-full max-w-2xl rounded-card border-2 border-border bg-surface shadow-arcade-lg overflow-hidden"
+        className="relative w-full max-w-2xl rounded-container border border-white/10 bg-surface/95 backdrop-blur-2xl shadow-arcade-lg overflow-hidden"
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-border bg-surface-2/60 flex flex-wrap items-center justify-between gap-2">
+        <div className="px-6 py-4 border-b border-white/[0.08] bg-surface-2/50 flex flex-wrap items-center justify-between gap-2">
           <div>
-            <span className="text-[11px] font-mono text-accent uppercase">
+            <span className="text-[11px] font-mono text-accent uppercase tracking-wider">
               {isManagedWorkspace
-                ? `Workspace • ${planTier ?? "FREE"} (${maxParticipants ?? 4} seats max)`
+                ? `Workspace · ${planTier ?? "FREE"} (${maxParticipants ?? 4} seats max)`
                 : "Pre-Join Device Check"}
             </span>
-            <h1 className="font-display text-xl sm:text-2xl font-extrabold text-text">
+            <h1 className="font-display text-xl sm:text-2xl font-bold tracking-tight text-text mt-0.5">
               Join {spaceName}
             </h1>
           </div>
 
-          <div className="flex items-center gap-1.5 bg-bg p-1 rounded-full border border-border">
+          <div className="flex items-center gap-1 bg-bg/90 p-1 rounded-full border border-white/10">
             <button
               type="button"
               onClick={() => setInitialViewMode("3d")}
-              className={`px-3 py-1 rounded-full text-[11px] font-display font-bold flex items-center gap-1 transition-colors ${
+              className={`px-3 py-1 rounded-full text-[11px] font-display font-semibold flex items-center gap-1.5 transition-colors ${
                 initialViewMode === "3d"
                   ? "bg-accent text-bg"
                   : "text-text-muted hover:text-text"
@@ -402,7 +406,7 @@ export function PreJoinLobby({
             <button
               type="button"
               onClick={() => setInitialViewMode("call")}
-              className={`px-3 py-1 rounded-full text-[11px] font-display font-bold flex items-center gap-1 transition-colors ${
+              className={`px-3 py-1 rounded-full text-[11px] font-display font-semibold flex items-center gap-1.5 transition-colors ${
                 initialViewMode === "call"
                   ? "bg-accent text-bg"
                   : "text-text-muted hover:text-text"
@@ -417,7 +421,7 @@ export function PreJoinLobby({
         <div className="p-5 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
           {/* Left: Live Camera Preview + Audio Meter + Device Pickers */}
           <div className="space-y-3">
-            <div className="relative aspect-[4/3] w-full rounded-container overflow-hidden border-2 border-border bg-black">
+            <div className="relative aspect-[4/3] w-full rounded-card overflow-hidden border border-white/10 bg-black">
               {hasLivePreviewVideo && stream ? (
                 <StreamVideo
                   stream={stream}
@@ -510,7 +514,7 @@ export function PreJoinLobby({
                     setSelectedVideoId(id);
                     void acquirePreview({ videoId: id, wantAudio: audioEnabled, wantVideo: true });
                   }}
-                  className="w-full px-2 py-1.5 rounded-control bg-bg border border-border text-text truncate focus:outline-none focus:border-accent"
+                  className="w-full px-2.5 py-1.5 rounded-control bg-bg border border-[color:var(--color-border-strong)] text-text truncate focus:outline-none focus:border-accent"
                 >
                   {videoDevices.length === 0 ? (
                     <option value="">Default Camera</option>
@@ -533,7 +537,7 @@ export function PreJoinLobby({
                     setSelectedAudioId(id);
                     void acquirePreview({ audioId: id, wantAudio: true, wantVideo: videoEnabled });
                   }}
-                  className="w-full px-2 py-1.5 rounded-control bg-bg border border-border text-text truncate focus:outline-none focus:border-accent"
+                  className="w-full px-2.5 py-1.5 rounded-control bg-bg border border-[color:var(--color-border-strong)] text-text truncate focus:outline-none focus:border-accent"
                 >
                   {audioDevices.length === 0 ? (
                     <option value="">Default Mic</option>
@@ -553,7 +557,7 @@ export function PreJoinLobby({
           <div className="flex flex-col justify-between gap-4">
             <div className="space-y-4">
               <div>
-                <label htmlFor="prejoin-name" className="block text-xs font-display text-text mb-1">
+                <label htmlFor="prejoin-name" className="block text-xs font-medium text-text mb-1.5">
                   Display Name
                 </label>
                 <input
@@ -564,7 +568,7 @@ export function PreJoinLobby({
                   value={name}
                   onChange={(e) => setName(e.target.value)}
                   placeholder="Enter your name"
-                  className="w-full px-3 py-2 text-xs bg-bg border border-border rounded-control text-text focus:outline-none focus:border-accent"
+                  className="w-full px-3.5 py-2 text-xs bg-bg border border-[color:var(--color-border-strong)] rounded-control text-text focus:outline-none focus:border-accent"
                 />
               </div>
 
@@ -607,10 +611,10 @@ export function PreJoinLobby({
               </div>
             </div>
 
-            <div className="space-y-2 pt-2 border-t border-border">
+            <div className="space-y-2 pt-3 border-t border-white/[0.08]">
               <button
                 type="submit"
-                className="w-full py-3 px-4 bg-accent text-bg font-display font-extrabold text-sm rounded-control shadow-arcade hover:brightness-110 transition-all"
+                className="w-full py-3 px-4 bg-accent text-bg font-display font-semibold text-sm rounded-control shadow-arcade-sm hover:brightness-110 transition-all"
               >
                 {videoEnabled
                   ? "Enter Call & Office →"

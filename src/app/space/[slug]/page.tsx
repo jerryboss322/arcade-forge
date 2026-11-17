@@ -208,7 +208,7 @@ export default function SpaceSlugPage() {
 
   if (!access) {
     return (
-      <div className="min-h-screen bg-bg flex items-center justify-center text-text font-display text-sm">
+      <div className="min-h-dvh bg-bg flex items-center justify-center text-text-muted font-display text-sm">
         Checking workspace access...
       </div>
     );
@@ -217,31 +217,35 @@ export default function SpaceSlugPage() {
   // Step 1: Passcode Gate for protected team workspaces
   if (access.isManaged && !access.unlocked) {
     return (
-      <div className="min-h-screen bg-bg flex items-center justify-center p-4">
+      <div className="min-h-dvh bg-bg flex items-center justify-center p-4 relative overflow-hidden">
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute top-1/4 left-1/2 -translate-x-1/2 w-[420px] h-[420px] rounded-full bg-accent/10 blur-3xl"
+        />
         <form
           onSubmit={handlePasscodeUnlock}
-          className="w-full max-w-md p-6 rounded-container bg-surface border-2 border-border shadow-arcade space-y-4"
+          className="relative w-full max-w-md p-6 sm:p-7 rounded-container bg-surface/95 backdrop-blur-2xl border border-white/10 shadow-arcade-lg space-y-5"
         >
-          <div className="space-y-1">
-            <span className="text-[11px] font-mono text-accent uppercase">
-              Password-Protected Workspace • {access.planTier} ({access.maxParticipants} seats max)
+          <div className="space-y-1.5">
+            <span className="text-[11px] font-mono text-accent uppercase tracking-wider">
+              Password-Protected Workspace · {access.planTier} ({access.maxParticipants} seats max)
             </span>
-            <h1 className="font-display text-2xl font-extrabold text-text">
+            <h1 className="font-display text-2xl font-bold tracking-tight text-text">
               {access.name || preset.name}
             </h1>
-            <p className="text-xs text-text-muted">
+            <p className="text-xs text-text-muted leading-relaxed">
               Enter the workspace passcode shared by your admin to unlock this office.
             </p>
           </div>
 
           {unlockError && (
-            <div className="p-2.5 rounded-control bg-red-500/15 border border-red-500/40 text-xs text-red-300">
+            <div className="p-3 rounded-control bg-danger/15 border border-danger/40 text-xs text-red-200">
               {unlockError}
             </div>
           )}
 
           <div>
-            <label className="block text-xs font-display text-text mb-1">
+            <label className="block text-xs font-medium text-text mb-1.5">
               Workspace Passcode
             </label>
             <input
@@ -250,21 +254,21 @@ export default function SpaceSlugPage() {
               value={passcodeInput}
               onChange={(e) => setPasscodeInput(e.target.value)}
               placeholder="Enter room passcode"
-              className="w-full px-3 py-2 text-xs bg-bg border border-border rounded-control text-text font-mono focus:outline-none focus:border-accent"
+              className="w-full px-3.5 py-2.5 text-xs bg-bg border border-[color:var(--color-border-strong)] rounded-control text-text font-mono focus:outline-none focus:border-accent"
             />
           </div>
 
           <button
             type="submit"
             disabled={verifying}
-            className="w-full py-2.5 bg-accent text-bg font-display font-bold text-xs uppercase rounded-control shadow-arcade hover:brightness-110 disabled:opacity-60"
+            className="w-full py-2.5 px-4 bg-accent text-bg font-display font-semibold text-xs rounded-control shadow-arcade-sm hover:brightness-110 disabled:opacity-60 transition-all"
           >
             {verifying ? "Verifying..." : "Unlock Office →"}
           </button>
 
-          <div className="pt-2 border-t border-border flex items-center justify-between text-[11px] text-text-muted">
-            <span>Zero employee DB accounts</span>
-            <Link href="/admin" className="text-accent hover:underline">
+          <div className="pt-3 border-t border-white/[0.08] flex items-center justify-between text-[11px] text-text-muted">
+            <span>Zero employee accounts required</span>
+            <Link href="/admin" className="text-accent font-medium hover:underline">
               Boss Portal →
             </Link>
           </div>

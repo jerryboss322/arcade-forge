@@ -21,16 +21,17 @@ const config: Config = {
         danger: "var(--color-danger)",
       },
       borderRadius: {
-        card: "8px",
-        control: "6px",
+        card: "16px",
+        container: "20px",
+        control: "10px",
       },
       boxShadow: {
-        arcade: "4px 4px 0 #000000",
-        "arcade-lg": "6px 6px 0 #000000",
-        "arcade-sm": "2px 2px 0 #000000",
+        arcade: "0 1px 2px rgba(0, 0, 0, 0.45), 0 12px 32px -12px rgba(0, 0, 0, 0.65), inset 0 1px 0 rgba(255, 255, 255, 0.06)",
+        "arcade-lg": "0 4px 12px rgba(0, 0, 0, 0.45), 0 24px 56px -16px rgba(0, 0, 0, 0.78), inset 0 1px 0 rgba(255, 255, 255, 0.08)",
+        "arcade-sm": "0 1px 2px rgba(0, 0, 0, 0.35), 0 4px 12px -4px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.05)",
       },
       fontFamily: {
-        display: ["var(--font-display)", "monospace"],
+        display: ["var(--font-display)", "system-ui", "-apple-system", "sans-serif"],
         sans: ["var(--font-sans)", "system-ui", "-apple-system", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
       },

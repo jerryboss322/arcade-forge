@@ -206,7 +206,7 @@ export function SpaceControls({
       {moreOpen && (
         <div
           aria-label="Office tools and settings"
-          className="mb-2 p-2 w-60 bg-surface/95 backdrop-blur-xl border border-border/80 rounded-2xl shadow-arcade space-y-1.5 text-xs"
+          className="mb-2 p-2.5 w-60 bg-surface/95 backdrop-blur-2xl border border-white/10 rounded-2xl shadow-arcade-lg space-y-1.5 text-xs"
         >
           <div className="grid grid-cols-2 gap-1">
             <button
@@ -334,7 +334,7 @@ export function SpaceControls({
         role="toolbar"
         aria-label="Virtual office controls"
         {...({ focusgroup: "toolbar wrap" } as Record<string, string>)}
-        className="flex items-center gap-1 p-1.5 bg-surface/85 backdrop-blur-xl border border-border/80 rounded-full shadow-arcade"
+        className="flex items-center gap-1 p-1.5 bg-surface/85 backdrop-blur-2xl border border-white/10 rounded-full shadow-arcade-lg"
       >
         <div role="group" aria-label="Audio and video" className="flex items-center gap-1">
           <button

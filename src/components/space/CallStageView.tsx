@@ -33,8 +33,8 @@ const LINK_STATUS_PILL: Record<PeerLinkStatus, { text: string; className: string
     className: "bg-amber-500/20 text-amber-300 border-amber-400/40",
   },
   connected: {
-    text: "HD P2P",
-    className: "bg-emerald-500/20 text-emerald-300 border-emerald-400/40",
+    text: "Live HD",
+    className: "bg-accent/20 text-accent border-accent/40",
   },
   relayed: {
     text: "TURN Relay",
@@ -109,12 +109,12 @@ export function CallStageView({
   );
 
   return (
-    <div className="relative w-full h-full bg-[#090d16] flex flex-col overflow-hidden">
-      {/* Subtle WhatsApp Call Top Header Bar */}
+    <div className="relative w-full h-full bg-bg flex flex-col overflow-hidden">
+      {/* Subtle Video Call Top Header Bar */}
       <div className="relative z-10 px-4 pt-16 pb-2 flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface/75 backdrop-blur-md border border-border/70 text-xs">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="font-display font-bold text-text">Video Call Stage</span>
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-surface/80 backdrop-blur-xl border border-white/10 text-xs">
+          <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+          <span className="font-display font-semibold text-text">Video Call Stage</span>
           <span className="text-text-muted font-mono">
             · {sortedRemotePeers.length + 1} online
           </span>
@@ -123,7 +123,7 @@ export function CallStageView({
         <button
           type="button"
           onClick={onBackToOffice}
-          className="px-3 py-1.5 rounded-full bg-surface/80 hover:bg-surface border border-border/70 hover:border-accent text-xs font-display font-bold text-text flex items-center gap-1.5 transition-colors"
+          className="px-3.5 py-1.5 rounded-full bg-surface/85 hover:bg-surface border border-white/10 hover:border-accent/60 text-xs font-display font-semibold text-text flex items-center gap-1.5 transition-colors"
         >
           <IconCube className="w-3.5 h-3.5 text-accent" />
           <span>Office View</span>
@@ -133,7 +133,7 @@ export function CallStageView({
       {/* Main Call Grid */}
       <div className="flex-1 min-h-0 px-3 sm:px-6 pb-24 pt-1 flex items-center justify-center">
         {sortedRemotePeers.length === 0 ? (
-          <div className="relative w-full max-w-2xl h-full max-h-[68vh] rounded-3xl overflow-hidden border border-border/70 bg-surface/60 shadow-2xl flex flex-col items-center justify-center">
+          <div className="relative w-full max-w-2xl h-full max-h-[68vh] rounded-3xl overflow-hidden border border-white/10 bg-surface/60 shadow-arcade-lg flex flex-col items-center justify-center">
             {localHasVideo && localStream ? (
               <StreamVideo
                 stream={localStream}
@@ -153,7 +153,7 @@ export function CallStageView({
                   Waiting for teammates to join...
                 </p>
                 <p className="text-xs text-text-muted">
-                  Share your workspace link so colleagues can join your WhatsApp-style video call.
+                  Share your workspace invite link so colleagues can join your video call.
                 </p>
                 {localMediaStatus?.cameraError && (
                   <div className="mt-1 px-3 py-2 rounded-xl bg-amber-500/15 border border-amber-400/40 text-amber-200 text-xs flex flex-col items-center gap-2">
@@ -214,7 +214,7 @@ export function CallStageView({
                 >
                   <div
                     className={`w-20 h-20 rounded-full flex items-center justify-center text-2xl font-display font-bold text-white shadow-lg transition-transform ${
-                      isSpeaking ? "scale-110 ring-4 ring-[#37E6C4]/50" : ""
+                      isSpeaking ? "scale-110 ring-4 ring-accent/50" : ""
                     }`}
                     style={{ backgroundColor: peer.avatarColor }}
                   >
@@ -231,10 +231,10 @@ export function CallStageView({
               return (
                 <div
                   key={peer.id}
-                  className={`relative rounded-2xl overflow-hidden bg-[#111827] border-2 transition-colors ${
+                  className={`relative rounded-2xl overflow-hidden bg-surface border-2 transition-colors ${
                     isSpeaking
-                      ? "border-[#37E6C4] ring-2 ring-[#37E6C4]/35"
-                      : "border-border/70"
+                      ? "border-accent ring-2 ring-accent/35"
+                      : "border-white/10"
                   }`}
                 >
                   {hasVideoTrack && stream ? (
@@ -309,8 +309,8 @@ export function CallStageView({
       {/* WhatsApp Self Picture-in-Picture (PiP) when remote teammates are present */}
       {sortedRemotePeers.length > 0 && (
         <div
-          className={`absolute bottom-24 right-4 z-30 w-28 h-40 sm:w-36 sm:h-48 rounded-2xl overflow-hidden bg-surface border-2 shadow-2xl transition-all ${
-            localSpeaking ? "border-[#37E6C4]" : "border-accent/80"
+          className={`absolute bottom-24 right-4 z-30 w-28 h-40 sm:w-36 sm:h-48 rounded-2xl overflow-hidden bg-surface border-2 shadow-arcade-lg transition-all ${
+            localSpeaking ? "border-accent ring-2 ring-accent/40" : "border-white/15"
           }`}
         >
           {localHasVideo && localStream ? (

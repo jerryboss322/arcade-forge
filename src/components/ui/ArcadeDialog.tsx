@@ -1,5 +1,7 @@
 "use client";
 
+import { IconClose } from "@/components/ui/Icons";
+
 import React, { useEffect, useRef, useId } from "react";
 
 interface ArcadeDialogProps {
@@ -74,19 +76,20 @@ export function ArcadeDialog({
       ref={dialogRef}
       {...({ closedby: "any" } as React.DialogHTMLAttributes<HTMLDialogElement>)}
       aria-labelledby={titleId}
-      className={`w-full ${maxWidthClass} rounded-card border-2 border-border bg-surface text-text p-0 shadow-arcade-lg backdrop:bg-black/70 backdrop:backdrop-blur-sm`}
+      className={`m-auto w-[calc(100%-2rem)] ${maxWidthClass} rounded-container border border-white/10 bg-surface/95 backdrop-blur-2xl text-text p-0 shadow-arcade-lg`}
     >
-      <div className="p-5">
-        <div className="flex items-center justify-between border-b-2 border-border pb-3 mb-4">
-          <h2 id={titleId} className="font-display text-base tracking-wider uppercase text-text">
+      <div className="p-6">
+        <div className="flex items-center justify-between gap-4 border-b border-white/[0.08] pb-4 mb-5">
+          <h2 id={titleId} className="font-display text-base font-semibold tracking-tight text-text">
             {title}
           </h2>
           <button
             type="button"
             onClick={() => dialogRef.current?.close()}
-            className="h-8 px-2.5 rounded-control border-2 border-border bg-surface-2 hover:border-accent text-xs font-semibold text-text-muted hover:text-text transition-colors"
+            aria-label="Close dialog"
+            className="h-8 w-8 inline-flex items-center justify-center rounded-control border border-white/10 bg-surface-2 hover:border-accent/60 text-text-muted hover:text-text transition-colors shrink-0"
           >
-            ESC
+            <IconClose className="w-4 h-4" />
           </button>
         </div>
         {children}

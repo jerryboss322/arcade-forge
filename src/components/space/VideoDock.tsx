@@ -18,7 +18,7 @@ interface VideoDockProps {
 
 const LINK_BADGE: Record<PeerLinkStatus, { label: string; dot: string }> = {
   connecting: { label: "...", dot: "bg-amber-400 animate-pulse" },
-  connected: { label: "P2P", dot: "bg-emerald-400" },
+  connected: { label: "LIVE", dot: "bg-accent" },
   relayed: { label: "TURN", dot: "bg-sky-400" },
   disconnected: { label: "Reconn", dot: "bg-amber-500 animate-pulse" },
   failed: { label: "Retry", dot: "bg-red-500" },
@@ -36,7 +36,7 @@ export function VideoDock({
   const allInProximity = [localPeer, ...nearbyPeers];
 
   return (
-    <div className="max-w-[94vw] rounded-2xl bg-surface/85 backdrop-blur-xl border border-border/75 shadow-arcade px-2.5 py-2 flex items-center gap-2 overflow-x-auto scrollbar-none">
+    <div className="max-w-[94vw] rounded-2xl bg-surface/85 backdrop-blur-2xl border border-white/10 shadow-arcade-lg px-2.5 py-2 flex items-center gap-2 overflow-x-auto scrollbar-none">
       {allInProximity.map((peer) => {
         const isLocal = peer.id === localPeer.id;
         const isSpeaking = !!(speakingMap[isLocal ? "local" : peer.id] || speakingMap[peer.id]);
@@ -65,10 +65,10 @@ export function VideoDock({
             <div
               className={`w-20 h-14 sm:w-28 sm:h-16 rounded-xl overflow-hidden border-2 bg-bg relative flex items-center justify-center transition-transform group-hover:scale-[1.03] ${
                 isSpeaking
-                  ? "border-[#37E6C4] ring-2 ring-[#37E6C4]/40"
+                  ? "border-accent ring-2 ring-accent/40"
                   : isLocal
-                    ? "border-accent/80"
-                    : "border-border/80"
+                    ? "border-accent/70"
+                    : "border-white/15"
               }`}
             >
               {hasVideoTrack && stream ? (

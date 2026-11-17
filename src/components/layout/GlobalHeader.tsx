@@ -4,6 +4,13 @@ import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ArcadeDialog } from "@/components/ui/ArcadeDialog";
+import {
+  ForgeSpaceMark,
+  IconChevronDown,
+  IconPlus,
+  IconArrowRight,
+  IconLock,
+} from "@/components/ui/Icons";
 
 interface BossHeaderUser {
   id: string;
@@ -12,6 +19,20 @@ interface BossHeaderUser {
   plan: string;
 }
 
+const PRIMARY_LINKS = [
+  { href: "/spaces", label: "Offices" },
+  { href: "/admin", label: "Boss Admin" },
+  { href: "/features", label: "Features" },
+  { href: "/pricing", label: "Pricing" },
+  { href: "/docs", label: "Guide" },
+];
+
+const WORKSPACE_TOOLS = [
+  { href: "/whiteboard", label: "Whiteboard", desc: "Shared sketchpad & diagramming" },
+  { href: "/schedule", label: "Schedule", desc: "Team sync & huddle bookings" },
+  { href: "/pulse", label: "Pulse", desc: "Live platform & latency status" },
+];
+
 export function GlobalHeader() {
   const pathname = usePathname();
   const router = useRouter();
@@ -19,6 +40,7 @@ export function GlobalHeader() {
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [toolsMenuOpen, setToolsMenuOpen] = useState(false);
   const [quickJoinCode, setQuickJoinCode] = useState("");
   const [newOfficeName, setNewOfficeName] = useState("");
   const [newOfficeSlug, setNewOfficeSlug] = useState("");
@@ -49,6 +71,7 @@ export function GlobalHeader() {
     e.preventDefault();
     if (!quickJoinCode.trim()) return;
     const clean = quickJoinCode.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (!clean) return;
     router.push(`/space/${clean}`);
     setQuickJoinCode("");
   };
@@ -70,145 +93,169 @@ export function GlobalHeader() {
     );
   };
 
-  const NAV_LINKS = [
-    { href: "/spaces", label: "Offices" },
-    { href: "/admin", label: "Boss Admin" },
-    { href: "/features", label: "Features" },
-    { href: "/whiteboard", label: "Whiteboard" },
-    { href: "/schedule", label: "Schedule" },
-    { href: "/pulse", label: "Pulse" },
-    { href: "/pricing", label: "Pricing" },
-    { href: "/docs", label: "Guide" },
-  ];
-
-  // Full-bleed virtual offices use their own minimal floating canvas HUD
   if (pathname?.startsWith("/space/")) {
     return null;
   }
 
   return (
     <>
-      <header className="sticky top-0 z-40 h-14 md:h-16 bg-bg border-b-2 border-border">
+      <header className="sticky top-0 z-40 h-16 bg-bg/80 backdrop-blur-xl border-b border-white/[0.08]">
         <div className="max-w-[1280px] mx-auto h-full px-4 md:px-8 flex items-center justify-between gap-4">
-          {/* Left: Logo + Multi-Page Nav Links */}
-          <div className="flex items-center gap-5">
+          {/* Left: Brand + Consolidated Navigation */}
+          <div className="flex items-center gap-6">
             <Link
               href="/"
               className="flex items-center gap-2.5 group focus:outline-none flex-shrink-0"
             >
-              <span className="w-8 h-8 rounded-control bg-accent border-2 border-black shadow-arcade-sm flex items-center justify-center font-display text-bg font-bold text-sm group-hover:-translate-y-0.5 transition-transform">
-                FS
-              </span>
-              <span className="font-display text-base md:text-lg tracking-wider text-text uppercase">
+              <ForgeSpaceMark className="w-8 h-8 group-hover:scale-105 transition-transform" />
+              <span className="font-display text-base md:text-lg font-bold tracking-tight text-text">
                 Forge<span className="text-accent">Space</span>
               </span>
             </Link>
 
-            <nav className="hidden xl:flex items-center gap-1">
-              {NAV_LINKS.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  className={`px-2.5 py-1.5 rounded-control text-xs font-display font-semibold transition-colors ${
-                    pathname === link.href
-                      ? "bg-surface-2 text-accent border border-border shadow-sm"
-                      : "text-text-muted hover:text-text hover:bg-surface-2/60"
+            <nav className="hidden lg:flex items-center gap-1" aria-label="Primary navigation">
+              {PRIMARY_LINKS.map((link) => {
+                const active = pathname === link.href;
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    className={`px-3 py-1.5 rounded-control text-xs font-medium transition-colors ${
+                      active
+                        ? "bg-white/[0.08] text-text border border-white/10"
+                        : "text-text-muted hover:text-text hover:bg-white/[0.04]"
+                    }`}
+                  >
+                    {link.label}
+                  </Link>
+                );
+              })}
+
+              {/* Tools Dropdown */}
+              <div className="relative" onMouseLeave={() => setToolsMenuOpen(false)}>
+                <button
+                  type="button"
+                  onClick={() => setToolsMenuOpen((v) => !v)}
+                  aria-expanded={toolsMenuOpen}
+                  className={`px-3 py-1.5 rounded-control text-xs font-medium inline-flex items-center gap-1 transition-colors ${
+                    WORKSPACE_TOOLS.some((t) => t.href === pathname)
+                      ? "bg-white/[0.08] text-text border border-white/10"
+                      : "text-text-muted hover:text-text hover:bg-white/[0.04]"
                   }`}
                 >
-                  {link.label}
-                </Link>
-              ))}
+                  <span>Tools</span>
+                  <IconChevronDown className="w-3.5 h-3.5 opacity-70" />
+                </button>
+
+                {toolsMenuOpen && (
+                  <div className="absolute left-0 mt-1.5 w-60 rounded-card border border-white/10 bg-surface/95 backdrop-blur-xl shadow-arcade p-1.5 z-50">
+                    {WORKSPACE_TOOLS.map((tool) => (
+                      <Link
+                        key={tool.href}
+                        href={tool.href}
+                        onClick={() => setToolsMenuOpen(false)}
+                        className="block px-3 py-2 rounded-control hover:bg-white/[0.05] transition-colors"
+                      >
+                        <div className="text-xs font-semibold text-text">{tool.label}</div>
+                        <div className="text-[11px] text-text-muted mt-0.5">{tool.desc}</div>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+              </div>
             </nav>
           </div>
 
-          {/* Center: Quick Join Space Bar (hidden on small screens) */}
+          {/* Center: Quick Join Slug Bar */}
           <form
             onSubmit={handleQuickJoin}
-            className="flex-1 max-w-[320px] hidden md:block"
+            className="flex-1 max-w-[270px] hidden md:block"
           >
             <div className="relative flex items-center">
-              <span className="absolute left-3 text-xs text-text-muted font-mono select-none">
+              <span className="absolute left-3 text-[11px] text-text-muted font-mono select-none pointer-events-none">
                 /space/
               </span>
               <input
                 type="text"
                 value={quickJoinCode}
                 onChange={(e) => setQuickJoinCode(e.target.value)}
-                placeholder="slug to join..."
+                placeholder="room-slug"
                 aria-label="Quick join office"
-                className="w-full h-9 pl-16 pr-12 rounded-control bg-surface-2 border-2 border-border text-xs text-text placeholder:text-text-muted focus:outline-none focus:border-accent transition-colors font-mono"
+                className="w-full h-9 pl-16 pr-14 rounded-control bg-surface-2/80 border border-[color:var(--color-border-strong)]/70 text-xs text-text placeholder:text-text-muted/70 focus:outline-none focus:border-accent transition-colors font-mono"
               />
               <button
                 type="submit"
-                className="absolute right-1 px-2.5 py-1 text-[11px] font-display font-bold bg-accent text-bg rounded-control hover:brightness-110"
+                className="absolute right-1 px-2.5 py-1 text-[11px] font-semibold bg-white/[0.08] hover:bg-accent text-text hover:text-bg rounded-[7px] transition-colors"
               >
                 Join
               </button>
             </div>
           </form>
 
-          {/* Right: + Create Office + User Dropdown */}
-          <div className="flex items-center gap-2.5">
+          {/* Right: Demo + Create Space + Boss Auth */}
+          <div className="flex items-center gap-2">
             <Link
               href="/space/acme-hq"
-              className="hidden sm:inline-flex px-3 py-1.5 rounded-control text-xs font-display font-bold bg-surface-2 border border-border text-text hover:border-accent items-center gap-1.5 transition-colors"
+              className="hidden sm:inline-flex h-9 px-3 rounded-control text-xs font-medium bg-surface-2/80 border border-white/10 text-text hover:border-accent/60 items-center gap-2 transition-colors"
             >
-              <span>Demo 3D</span>
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="w-1.5 h-1.5 rounded-full bg-accent animate-pulse" />
+              <span>Live Demo</span>
             </Link>
 
             <button
               type="button"
               onClick={() => setCreateModalOpen(true)}
-              className="h-9 px-3.5 rounded-control bg-accent hover:brightness-110 text-bg font-display font-bold text-xs border border-black shadow-arcade-sm active:translate-y-0.5 transition-all flex items-center gap-1"
+              className="h-9 px-3.5 rounded-control bg-accent hover:brightness-110 text-bg font-display font-semibold text-xs shadow-arcade-sm active:scale-[0.98] transition-all inline-flex items-center gap-1.5"
             >
-              <span>+ Create Space</span>
+              <IconPlus className="w-3.5 h-3.5" />
+              <span>New Space</span>
             </button>
 
-            {/* Real Boss Session Menu or Sign-In Link (no fake mock user) */}
             {bossUser ? (
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setUserMenuOpen((v) => !v)}
                   aria-label="Boss account menu"
-                  className="h-9 px-2.5 rounded-control bg-surface border border-border hover:border-accent flex items-center gap-1.5 transition-colors"
+                  aria-expanded={userMenuOpen}
+                  className="h-9 px-2.5 rounded-control bg-surface border border-white/10 hover:border-accent/60 flex items-center gap-2 transition-colors"
                 >
-                  <span className="w-5 h-5 rounded-full bg-accent text-bg flex items-center justify-center text-[10px] font-bold border border-black">
+                  <span className="w-5 h-5 rounded-full bg-accent/20 text-accent flex items-center justify-center text-[10px] font-bold border border-accent/40">
                     {bossUser.username.slice(0, 1).toUpperCase()}
                   </span>
-                  <span className="hidden sm:inline text-xs font-semibold text-text">
+                  <span className="hidden sm:inline text-xs font-medium text-text">
                     @{bossUser.username}
                   </span>
-                  <span className="hidden md:inline px-1.5 py-0.5 rounded bg-surface-2 text-[9px] font-mono text-accent uppercase">
+                  <span className="hidden md:inline px-1.5 py-0.5 rounded bg-white/[0.06] text-[10px] font-mono text-accent uppercase">
                     {bossUser.plan}
                   </span>
                 </button>
 
                 {userMenuOpen && (
                   <div
-                    className="absolute right-0 mt-2 w-56 rounded-card border-2 border-border bg-surface shadow-arcade p-2 z-50 animate-scale-up"
+                    className="absolute right-0 mt-2 w-56 rounded-card border border-white/10 bg-surface/95 backdrop-blur-xl shadow-arcade-lg p-2 z-50"
                     onMouseLeave={() => setUserMenuOpen(false)}
                   >
-                    <div className="px-2 py-1.5 border-b border-border mb-1">
-                      <p className="text-xs font-bold text-text truncate">
+                    <div className="px-2.5 py-2 border-b border-white/[0.08] mb-1.5">
+                      <p className="text-xs font-semibold text-text truncate">
                         @{bossUser.username}
                       </p>
                       <p className="text-[11px] text-text-muted truncate">{bossUser.email}</p>
                     </div>
 
-                    <div className="space-y-1 p-1">
+                    <div className="space-y-1">
                       <Link
                         href="/admin"
                         onClick={() => setUserMenuOpen(false)}
-                        className="block w-full text-left px-2 py-1.5 rounded-control text-xs font-semibold text-text hover:bg-surface-2 hover:text-accent"
+                        className="flex items-center justify-between w-full px-2.5 py-1.5 rounded-control text-xs font-medium text-text hover:bg-white/[0.06] hover:text-accent transition-colors"
                       >
-                        Boss Admin Portal →
+                        <span>Boss Admin Portal</span>
+                        <IconArrowRight className="w-3.5 h-3.5" />
                       </Link>
                       <button
                         type="button"
                         onClick={() => void handleBossSignOut()}
-                        className="w-full text-left px-2 py-1.5 rounded-control text-xs text-red-400 hover:bg-red-500/10"
+                        className="w-full text-left px-2.5 py-1.5 rounded-control text-xs font-medium text-danger hover:bg-danger/10 transition-colors"
                       >
                         Sign Out
                       </button>
@@ -219,7 +266,7 @@ export function GlobalHeader() {
             ) : (
               <Link
                 href="/admin"
-                className="h-9 px-3 rounded-control bg-surface border border-border hover:border-accent flex items-center text-xs font-display font-semibold text-text transition-colors"
+                className="h-9 px-3 rounded-control bg-surface border border-white/10 hover:border-white/25 inline-flex items-center text-xs font-medium text-text transition-colors"
               >
                 Boss Sign In
               </Link>
@@ -228,88 +275,38 @@ export function GlobalHeader() {
         </div>
       </header>
 
-      {/* Mobile Bottom Navigation Bar linking each page */}
+      {/* Mobile Bottom Navigation */}
       <nav
         aria-label="Mobile navigation"
-        className="xl:hidden fixed bottom-0 left-0 right-0 z-40 h-14 bg-surface/95 backdrop-blur-md border-t-2 border-border flex items-center justify-around px-1"
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-40 min-h-14 pb-[env(safe-area-inset-bottom)] bg-bg/90 backdrop-blur-xl border-t border-white/[0.08] flex items-center justify-around px-2"
       >
-        <Link
-          href="/spaces"
-          className={`flex flex-col items-center justify-center py-1 px-2 text-[11px] font-display font-semibold ${
-            pathname === "/spaces" ? "text-accent" : "text-text-muted hover:text-text"
-          }`}
-        >
-          <span>Offices</span>
-        </Link>
-        <Link
-          href="/admin"
-          className={`flex flex-col items-center justify-center py-1 px-2 text-[11px] font-display font-semibold ${
-            pathname === "/admin" ? "text-accent" : "text-text-muted hover:text-text"
-          }`}
-        >
-          <span>Admin</span>
-        </Link>
-        <Link
-          href="/features"
-          className={`flex flex-col items-center justify-center py-1 px-2 text-[11px] font-display font-semibold ${
-            pathname === "/features" ? "text-accent" : "text-text-muted hover:text-text"
-          }`}
-        >
-          <span>Features</span>
-        </Link>
-        <Link
-          href="/whiteboard"
-          className={`flex flex-col items-center justify-center py-1 px-2 text-[11px] font-display font-semibold ${
-            pathname === "/whiteboard" ? "text-accent" : "text-text-muted hover:text-text"
-          }`}
-        >
-          <span>Board</span>
-        </Link>
-        <Link
-          href="/schedule"
-          className={`flex flex-col items-center justify-center py-1 px-2 text-[11px] font-display font-semibold ${
-            pathname === "/schedule" ? "text-accent" : "text-text-muted hover:text-text"
-          }`}
-        >
-          <span>Syncs</span>
-        </Link>
-        <Link
-          href="/pulse"
-          className={`flex flex-col items-center justify-center py-1 px-2 text-[11px] font-display font-semibold ${
-            pathname === "/pulse" ? "text-accent" : "text-text-muted hover:text-text"
-          }`}
-        >
-          <span>Pulse</span>
-        </Link>
-        <Link
-          href="/pricing"
-          className={`flex flex-col items-center justify-center py-1 px-2 text-[11px] font-display font-semibold ${
-            pathname === "/pricing" ? "text-accent" : "text-text-muted hover:text-text"
-          }`}
-        >
-          <span>Pricing</span>
-        </Link>
-        <Link
-          href="/docs"
-          className={`flex flex-col items-center justify-center py-1 px-2 text-[11px] font-display font-semibold ${
-            pathname === "/docs" ? "text-accent" : "text-text-muted hover:text-text"
-          }`}
-        >
-          <span>Guide</span>
-        </Link>
+        {PRIMARY_LINKS.map((link) => {
+          const active = pathname === link.href;
+          return (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={`flex flex-col items-center justify-center py-2 px-2.5 text-[11px] font-medium transition-colors ${
+                active ? "text-accent" : "text-text-muted hover:text-text"
+              }`}
+            >
+              <span>{link.label}</span>
+            </Link>
+          );
+        })}
       </nav>
 
-      {/* Create Office Dialog */}
+      {/* Quick Create Demo Office Dialog */}
       <ArcadeDialog
         open={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
-        title="🏢 Create Virtual Office Floor"
+        title="Launch New Virtual Office"
         maxWidthClass="max-w-md"
       >
         <form onSubmit={handleCreateOffice} className="space-y-4">
           <div>
-            <label className="block text-xs font-display text-text mb-1">
-              Office / Team Name:
+            <label className="block text-xs font-medium text-text mb-1.5">
+              Workspace Name
             </label>
             <input
               type="text"
@@ -318,62 +315,65 @@ export function GlobalHeader() {
               onChange={(e) => handleOfficeNameChange(e.target.value)}
               placeholder="e.g. Apex Engineering HQ"
               maxLength={40}
-              className="w-full px-3 py-2 text-xs bg-bg border border-border rounded-control text-text focus:outline-none focus:border-accent"
+              className="w-full px-3.5 py-2 text-xs bg-bg border border-[color:var(--color-border-strong)] rounded-control text-text placeholder:text-text-muted/60 focus:outline-none focus:border-accent"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-display text-text mb-1">
-              Office URL Slug:
+            <label className="block text-xs font-medium text-text mb-1.5">
+              Workspace URL Slug
             </label>
-            <div className="flex items-center gap-1 text-xs font-mono text-text-muted">
-              <span>/space/</span>
+            <div className="flex items-center gap-1.5 text-xs font-mono text-text-muted">
+              <span className="select-none">/space/</span>
               <input
                 type="text"
                 required
                 value={newOfficeSlug}
                 onChange={(e) => setNewOfficeSlug(e.target.value)}
                 placeholder="apex-engineering"
-                className="flex-1 px-3 py-2 text-xs bg-bg border border-border rounded-control text-text focus:outline-none focus:border-accent"
+                className="flex-1 px-3 py-2 text-xs bg-bg border border-[color:var(--color-border-strong)] rounded-control text-text focus:outline-none focus:border-accent"
               />
             </div>
           </div>
 
-          <div className="p-3 bg-surface-2 rounded-control text-xs text-text-muted space-y-1">
-            <span className="font-display font-semibold text-text block">
-              Default Floor Plan Includes:
+          <div className="p-3.5 bg-surface-2/80 border border-white/[0.08] rounded-card text-xs text-text-muted space-y-2">
+            <span className="font-semibold text-text block">
+              Included Spatial Floorplan
             </span>
-            <ul className="list-disc pl-4 space-y-0.5">
-              <li>12 Claimable Workstation Desks with status badges</li>
-              <li>Soundproof Glass Boardroom & War Room</li>
-              <li>Lo-Fi Breakroom Lounge with Espresso Bar</li>
-              <li>Collaborative Whiteboard & Screen Sharing</li>
+            <ul className="space-y-1 text-[11px] leading-relaxed">
+              <li>12 claimable workstation desks with live status badges</li>
+              <li>Soundproof Glass Boardroom &amp; War Room huddle zones</li>
+              <li>Lo-Fi lounge with radio synthesizer &amp; collaborative whiteboard</li>
             </ul>
-            <div className="pt-2 border-t border-border/60">
-              Need a password-locked team link with zero employee accounts?{" "}
-              <Link
-                href="/admin"
-                onClick={() => setCreateModalOpen(false)}
-                className="text-accent font-semibold hover:underline"
-              >
-                Create one in Boss Admin →
-              </Link>
+            <div className="pt-2 border-t border-white/[0.08] flex items-center gap-1.5 text-[11px]">
+              <IconLock className="w-3.5 h-3.5 text-accent shrink-0" />
+              <span>
+                Need a password-protected team room?{" "}
+                <Link
+                  href="/admin"
+                  onClick={() => setCreateModalOpen(false)}
+                  className="text-accent font-medium hover:underline"
+                >
+                  Create in Boss Admin
+                </Link>
+              </span>
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-2 pt-2 border-t border-border">
+          <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">
             <button
               type="button"
               onClick={() => setCreateModalOpen(false)}
-              className="px-4 py-2 text-xs text-text-muted hover:text-text rounded-control"
+              className="px-4 py-2 text-xs font-medium text-text-muted hover:text-text rounded-control transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-5 py-2 text-xs bg-accent text-bg font-display font-bold rounded-control shadow-arcade hover:brightness-110"
+              className="px-5 py-2 text-xs bg-accent text-bg font-display font-semibold rounded-control shadow-arcade-sm hover:brightness-110 inline-flex items-center gap-1.5 transition-all"
             >
-              Launch Space →
+              <span>Launch Space</span>
+              <IconArrowRight className="w-3.5 h-3.5" />
             </button>
           </div>
         </form>

@@ -472,7 +472,7 @@ export function SpaceView({
       <div className="relative flex-1 h-full flex flex-col min-w-0">
         {/* Top-Left HUD Cluster */}
         <div className="absolute top-3 left-3 z-20 flex items-center gap-1.5 max-w-[calc(100vw-11rem)] sm:max-w-[55vw]">
-          <div className="h-8 pl-1.5 pr-2.5 rounded-full bg-surface/75 backdrop-blur-md border border-border/70 flex items-center gap-1.5 min-w-0 shadow-sm">
+          <div className="h-8 pl-1.5 pr-2.5 rounded-full bg-surface/80 backdrop-blur-xl border border-white/10 flex items-center gap-1.5 min-w-0 shadow-arcade-sm">
             <Link
               href="/spaces"
               aria-label="Back to offices"
@@ -511,7 +511,7 @@ export function SpaceView({
             <button
               type="button"
               onClick={() => setTheaterModalOpen(true)}
-              className="h-8 px-2.5 text-[11px] font-display font-semibold bg-accent text-bg rounded-full hover:brightness-110 flex items-center gap-1 shadow-sm animate-pulse"
+              className="h-8 px-3 text-[11px] font-display font-semibold bg-accent text-bg rounded-full hover:brightness-110 flex items-center gap-1.5 shadow-arcade-sm animate-pulse"
             >
               <IconScreenShare className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Watch</span>
@@ -524,7 +524,7 @@ export function SpaceView({
               onClick={() => setDiagnosticsOpen(true)}
               aria-label="Connection diagnostics"
               title="Inspect live WebRTC / LiveKit telemetry"
-              className="h-8 px-2.5 text-[11px] bg-surface/75 hover:bg-surface/95 backdrop-blur-md border border-border/70 hover:border-border text-text-muted hover:text-text rounded-full font-mono transition-colors shadow-sm"
+              className="h-8 px-2.5 text-[11px] bg-surface/80 hover:bg-surface backdrop-blur-xl border border-white/10 hover:border-white/25 text-text-muted hover:text-text rounded-full font-mono transition-colors shadow-arcade-sm"
             >
               Net
             </button>
@@ -535,11 +535,11 @@ export function SpaceView({
             onClick={() => setViewMode((m) => (m === "call" ? "3d" : "call"))}
             aria-pressed={viewMode === "call"}
             aria-label="Toggle full video call view"
-            title={viewMode === "call" ? "Return to 3D Office" : "Switch to WhatsApp Video Call View"}
-            className={`h-8 px-2.5 text-[11px] backdrop-blur-md border rounded-full flex items-center gap-1.5 font-display font-semibold transition-colors shadow-sm ${
+            title={viewMode === "call" ? "Return to 3D Office" : "Switch to Video Call Stage"}
+            className={`h-8 px-3 text-[11px] backdrop-blur-xl border rounded-full flex items-center gap-1.5 font-display font-semibold transition-colors shadow-arcade-sm ${
               viewMode === "call"
                 ? "bg-accent text-bg border-accent"
-                : "bg-surface/75 hover:bg-surface/95 border-border/70 text-text hover:border-accent"
+                : "bg-surface/80 hover:bg-surface border-white/10 text-text hover:border-accent/60"
             }`}
           >
             <IconVideo className="w-3.5 h-3.5" />
@@ -551,10 +551,10 @@ export function SpaceView({
             onClick={toggleAudioScope}
             aria-pressed={audioScope === "office"}
             aria-label="Office-wide audio mode"
-            className={`h-8 px-2.5 text-[11px] backdrop-blur-md border rounded-full flex items-center gap-1.5 font-display font-semibold transition-colors shadow-sm ${
+            className={`h-8 px-3 text-[11px] backdrop-blur-xl border rounded-full flex items-center gap-1.5 font-display font-semibold transition-colors shadow-arcade-sm ${
               audioScope === "office"
-                ? "bg-emerald-500/20 border-emerald-400/50 text-emerald-300 hover:bg-emerald-500/30"
-                : "bg-surface/75 hover:bg-surface/95 border-border/70 text-text-muted hover:text-text"
+                ? "bg-accent/20 border-accent/50 text-accent hover:bg-accent/30"
+                : "bg-surface/80 hover:bg-surface border-white/10 text-text-muted hover:text-text"
             }`}
           >
             <IconMic className="w-3.5 h-3.5" />
@@ -567,10 +567,10 @@ export function SpaceView({
             type="button"
             onClick={() => void handleCopyInvite()}
             aria-label="Copy invite link"
-            className="h-8 px-2.5 text-[11px] bg-surface/75 hover:bg-surface/95 backdrop-blur-md border border-border/70 hover:border-border text-text rounded-full flex items-center gap-1.5 transition-colors shadow-sm"
+            className="h-8 px-3 text-[11px] bg-surface/80 hover:bg-surface backdrop-blur-xl border border-white/10 hover:border-white/25 text-text rounded-full flex items-center gap-1.5 transition-colors shadow-arcade-sm"
           >
             {inviteCopied ? (
-              <IconCheck className="w-3.5 h-3.5 text-emerald-400" />
+              <IconCheck className="w-3.5 h-3.5 text-accent" />
             ) : (
               <IconLink className="w-3.5 h-3.5 text-accent-2" />
             )}
@@ -582,10 +582,10 @@ export function SpaceView({
             onClick={() => setIsSidebarOpen((v) => !v)}
             aria-pressed={isSidebarOpen}
             aria-label="People and chat panel"
-            className={`relative h-8 px-2.5 text-[11px] backdrop-blur-md border rounded-full flex items-center gap-1.5 font-display font-semibold transition-colors shadow-sm ${
+            className={`relative h-8 px-3 text-[11px] backdrop-blur-xl border rounded-full flex items-center gap-1.5 font-display font-semibold transition-colors shadow-arcade-sm ${
               isSidebarOpen
                 ? "bg-accent/20 border-accent text-accent"
-                : "bg-surface/75 hover:bg-surface/95 border-border/70 hover:border-border text-text"
+                : "bg-surface/80 hover:bg-surface border-white/10 hover:border-white/25 text-text"
             }`}
           >
             <IconUsers className="w-3.5 h-3.5" />
@@ -750,7 +750,7 @@ export function SpaceView({
 
           {accessBlockedReason && (
             <div className="absolute inset-0 z-50 bg-bg/90 backdrop-blur-md flex items-center justify-center p-4">
-              <div className="max-w-md w-full p-6 rounded-container bg-surface border-2 border-amber-500/60 shadow-arcade space-y-4 text-center">
+              <div className="max-w-md w-full p-6 rounded-container bg-surface/95 backdrop-blur-2xl border border-amber-400/50 shadow-arcade-lg space-y-4 text-center">
                 <span className="text-[11px] font-mono text-amber-400 uppercase">
                   {planTier
                     ? `${planTier} Workspace • ${maxParticipants ?? 4} Seats Max`
