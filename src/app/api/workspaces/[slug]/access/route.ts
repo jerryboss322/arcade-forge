@@ -44,6 +44,7 @@ export async function GET(
       maxParticipants: policy.maxParticipants,
       allowScreenShare: policy.allowScreenShare,
       isOwner,
+      passcode: isOwner ? (policy.passcodePlain ?? null) : undefined,
     });
   } catch (err) {
     console.error("[workspaces/[slug]/access GET] Failed:", err);

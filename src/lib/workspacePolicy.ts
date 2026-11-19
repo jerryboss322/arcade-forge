@@ -15,6 +15,7 @@ export interface SpacePolicy {
   maxParticipants: number;
   allowScreenShare: boolean;
   requiresPasscode: boolean;
+  passcodePlain?: string | null;
 }
 
 export function extractSpaceSlug(channelOrSlug: string): string {
@@ -39,6 +40,7 @@ export async function syncWorkspacePolicyCache(workspace: {
   ownerId: string;
   planTier: string;
   passcode: string | null;
+  passcodePlain?: string | null;
 }): Promise<SpacePolicy> {
   const tier = normalizePlanTier(workspace.planTier);
   const entitlements = PLAN_CONFIG[tier];
@@ -51,6 +53,7 @@ export async function syncWorkspacePolicyCache(workspace: {
     maxParticipants: entitlements.maxParticipants,
     allowScreenShare: entitlements.allowScreenShare,
     requiresPasscode: Boolean(workspace.passcode),
+    passcodePlain: workspace.passcodePlain ?? null,
   };
   await setCachedSpacePolicy(workspace.slug, policy, 180);
   return policy;
@@ -89,6 +92,7 @@ export async function getSpacePolicy(channelOrSlug: string): Promise<SpacePolicy
         w."name",
         w."ownerId",
         w."passcode",
+        COALESCE(w."passcodePlain", w."officeMap"->>'passcodePlain') AS "passcodePlain",
         u."plan" AS "ownerPlan"
       FROM "Workspace" w
       JOIN "User" u ON u."id" = w."ownerId"
@@ -99,6 +103,7 @@ export async function getSpacePolicy(channelOrSlug: string): Promise<SpacePolicy
       name: string;
       ownerId: string;
       passcode: string | null;
+      passcodePlain: string | null;
       ownerPlan: string;
     }>;
 
@@ -115,6 +120,7 @@ export async function getSpacePolicy(channelOrSlug: string): Promise<SpacePolicy
       ownerId: row.ownerId,
       planTier: row.ownerPlan,
       passcode: row.passcode,
+      passcodePlain: row.passcodePlain,
     });
   } catch (err) {
     console.warn(`[workspacePolicy] DB lookup failed for slug=${slug}:`, err);

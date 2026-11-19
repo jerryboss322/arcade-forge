@@ -209,7 +209,12 @@ export default function PricingPage() {
           </h2>
         </div>
 
-        <div className="overflow-x-auto">
+        <div
+          role="region"
+          aria-label="Plan comparison table"
+          tabIndex={0}
+          className="overflow-x-auto focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded-sm"
+        >
           <table className="w-full min-w-[600px] text-left text-xs border-collapse">
             <thead>
               <tr className="border-b border-white/15 text-text-muted font-mono uppercase tracking-wider text-[11px]">

@@ -140,12 +140,12 @@ export default function HomePage() {
           }}
         />
 
-        <div className="max-w-[1240px] mx-auto px-4 sm:px-6 md:px-8 pt-10 md:pt-14 pb-10 lg:pb-12 relative">
-          <div className="grid grid-cols-1 lg:grid-cols-12 items-center gap-8 lg:gap-0">
-            <div className="lg:col-span-5 relative z-20 space-y-6">
+        <div className="max-w-[1240px] mx-auto px-4 sm:px-6 md:px-8 pt-6 sm:pt-10 md:pt-14 pb-8 lg:pb-12 relative">
+          <div className="grid grid-cols-1 lg:grid-cols-12 items-center gap-6 sm:gap-8 lg:gap-0">
+            <div className="lg:col-span-5 relative z-20 space-y-5 sm:space-y-6">
               <h1
                 className="font-editorial font-normal text-text tracking-[-0.025em] leading-[0.98] [text-wrap:normal]"
-                style={{ fontSize: "clamp(2.7rem, 1.75rem + 2.4vw, 4.35rem)" }}
+                style={{ fontSize: "clamp(2.25rem, 1.45rem + 2.8vw, 4.35rem)" }}
               >
                 <span className="block sm:whitespace-nowrap">Walk up to a desk.</span>
                 <span className="block sm:whitespace-nowrap">
@@ -217,7 +217,7 @@ export default function HomePage() {
                   </span>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-0.5">
+                <div className="flex flex-wrap items-center gap-x-4 sm:gap-x-5 gap-y-2 pt-0.5">
                   {HERO_ZONES.map((z) => {
                     const active = floorStatus.zone === z.id;
                     return (
@@ -226,7 +226,7 @@ export default function HomePage() {
                         type="button"
                         onClick={() => handleSelectZone(z.id)}
                         aria-pressed={active}
-                        className={`pb-1 text-[11px] font-mono transition-colors inline-flex items-center gap-1.5 border-b-2 ${
+                        className={`py-1.5 text-[11px] font-mono transition-colors inline-flex items-center gap-1.5 border-b-2 ${
                           active
                             ? "border-accent text-text"
                             : "border-transparent text-text-muted hover:text-text hover:border-white/25"
@@ -406,10 +406,10 @@ export default function HomePage() {
             <RoomSign number="Front Door" room="Buzzer" />
             <h2
               className="font-editorial font-normal text-text tracking-[-0.02em] leading-[1.02] [text-wrap:normal] pt-2"
-              style={{ fontSize: "clamp(2.35rem, 1.7rem + 2.2vw, 3.35rem)" }}
+              style={{ fontSize: "clamp(2.15rem, 1.55rem + 2.2vw, 3.35rem)" }}
             >
               Your floor is{" "}
-              <em className="italic text-accent whitespace-nowrap">
+              <em className="italic text-accent sm:whitespace-nowrap">
                 one knock away.
               </em>
             </h2>

@@ -53,10 +53,23 @@
 html {
   color-scheme: dark;
   scrollbar-gutter: stable;
+  scroll-padding-top: 4.5rem;
+  scroll-padding-bottom: calc(4rem + env(safe-area-inset-bottom, 0px));
 }
 
 body {
   line-height: 1.5;
+  overflow-wrap: break-word;
+}
+
+:where(a, code) {
+  overflow-wrap: anywhere;
+}
+
+img,
+video {
+  max-inline-size: 100%;
+  block-size: auto;
 }
 
 h1, h2, h3, h4, h5, h6 {

@@ -224,11 +224,16 @@ export function GlobalHeader() {
       {/* Clean Mobile Bottom Bar */}
       <nav
         aria-label="Mobile directory"
-        className="md:hidden fixed bottom-0 left-0 right-0 z-40 min-h-14 pb-[env(safe-area-inset-bottom)] bg-bg/95 backdrop-blur-xl border-t border-white/[0.08] flex items-center justify-around px-3"
+        style={{
+          paddingBottom: "max(0.35rem, env(safe-area-inset-bottom, 0px))",
+          paddingLeft: "max(0.75rem, env(safe-area-inset-left, 0px))",
+          paddingRight: "max(0.75rem, env(safe-area-inset-right, 0px))",
+        }}
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 min-h-14 bg-bg/95 backdrop-blur-xl border-t border-white/[0.08] flex items-center justify-around"
       >
         <Link
           href="/"
-          className={`py-2 px-3 text-xs font-medium transition-colors ${
+          className={`min-h-[44px] inline-flex items-center py-2 px-3 text-xs font-medium transition-colors ${
             pathname === "/" ? "text-accent" : "text-text-muted hover:text-text"
           }`}
         >
@@ -240,7 +245,7 @@ export function GlobalHeader() {
             <Link
               key={item.href}
               href={item.href}
-              className={`py-2 px-3 text-xs font-medium transition-colors ${
+              className={`min-h-[44px] inline-flex items-center py-2 px-3 text-xs font-medium transition-colors ${
                 active ? "text-accent" : "text-text-muted hover:text-text"
               }`}
             >

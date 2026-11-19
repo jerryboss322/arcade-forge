@@ -138,8 +138,8 @@ export function IsometricOfficeHero({
 
       const dpr = Math.min(window.devicePixelRatio || 1, 2);
       const rect = canvas.getBoundingClientRect();
-      const width = Math.max(420, Math.round(rect.width));
-      const height = Math.max(340, Math.round(rect.height));
+      const width = Math.max(280, Math.round(rect.width));
+      const height = Math.max(240, Math.round(rect.height));
 
       if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
         canvas.width = width * dpr;
@@ -150,10 +150,13 @@ export function IsometricOfficeHero({
       ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, width, height);
 
-      const tileW = Math.max(41, Math.min(56, width * 0.056));
+      const isCompact = width < 560;
+      const tileW = isCompact
+        ? Math.max(19, Math.min(34, width * 0.055))
+        : Math.max(41, Math.min(56, width * 0.056));
       const tileH = tileW * 0.5;
-      const originX = width * 0.305;
-      const originY = height * 0.07;
+      const originX = width * (isCompact ? 0.365 : 0.305);
+      const originY = height * (isCompact ? 0.07 : 0.07);
       geomRef.current = { tileW, tileH, originX, originY };
 
       const toIso = (gx: number, gy: number): [number, number] => [
@@ -374,24 +377,30 @@ export function IsometricOfficeHero({
         ctx.arc(cx, cy - 24.5 + bob, 5.4, Math.PI, Math.PI * 2);
         ctx.fill();
 
-        // Crisp readable name tag
-        ctx.font = '600 10px "JetBrains Mono", ui-monospace, monospace';
-        const tw = ctx.measureText(name).width + 12;
-        ctx.fillStyle = isLocal ? "#F59E0B" : "rgba(12, 12, 14, 0.88)";
-        ctx.beginPath();
-        ctx.roundRect(cx - tw / 2, cy - 43 + bob, tw, 16, 4);
-        ctx.fill();
+        // Crisp readable name tag (on compact mobile viewports, show tags only for active speakers & "You" to prevent crowding)
+        if (!isCompact || isLocal || speaking) {
+          ctx.font = isCompact
+            ? '600 9px "JetBrains Mono", ui-monospace, monospace'
+            : '600 10px "JetBrains Mono", ui-monospace, monospace';
+          const tw = ctx.measureText(name).width + (isCompact ? 9 : 12);
+          const th = isCompact ? 14 : 16;
+          const tagY = cy - (isCompact ? 38 : 43) + bob;
+          ctx.fillStyle = isLocal ? "#F59E0B" : "rgba(12, 12, 14, 0.88)";
+          ctx.beginPath();
+          ctx.roundRect(cx - tw / 2, tagY, tw, th, 4);
+          ctx.fill();
 
-        if (!isLocal) {
-          ctx.strokeStyle = speaking ? "rgba(245, 158, 11, 0.7)" : "rgba(255,255,255,0.16)";
-          ctx.lineWidth = 0.9;
-          ctx.stroke();
+          if (!isLocal) {
+            ctx.strokeStyle = speaking ? "rgba(245, 158, 11, 0.7)" : "rgba(255,255,255,0.16)";
+            ctx.lineWidth = 0.9;
+            ctx.stroke();
+          }
+
+          ctx.fillStyle = isLocal ? "#0C0C0E" : speaking ? "#FCD34D" : "#F6F3EC";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText(name, cx, tagY + th / 2);
         }
-
-        ctx.fillStyle = isLocal ? "#0C0C0E" : speaking ? "#FCD34D" : "#F6F3EC";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(name, cx, cy - 35 + bob);
       };
 
       // 1. Extruded Architectural Diorama Floor Slab (gx: 2..22, gy: 0..16)
@@ -661,9 +670,11 @@ export function IsometricOfficeHero({
         ctx.fillText(text, lx, ly);
       };
 
-      drawFloorLabel(13.3, 2.25, "GLASS BOARDROOM · SOUNDPROOF", true);
-      drawFloorLabel(4.9, 2.55, "OPEN DESKS");
-      drawFloorLabel(13.0, 10.35, "ESPRESSO BAR");
+      if (!isCompact) {
+        drawFloorLabel(13.3, 2.25, "GLASS BOARDROOM · SOUNDPROOF", true);
+        drawFloorLabel(4.9, 2.55, "OPEN DESKS");
+        drawFloorLabel(13.0, 10.35, "ESPRESSO BAR");
+      }
 
       ctx.restore();
       rafId = requestAnimationFrame(drawScene);
@@ -696,7 +707,7 @@ export function IsometricOfficeHero({
   };
 
   return (
-    <div className="relative w-full h-[360px] sm:h-[460px] lg:h-[620px] overflow-visible">
+    <div className="relative w-full h-[270px] sm:h-[400px] lg:h-[620px] overflow-visible">
       {/* Masked canvas wrapper so the diorama fades smoothly off the left & bottom edges */}
       <div
         className="w-full h-full"
@@ -713,12 +724,12 @@ export function IsometricOfficeHero({
           ref={canvasRef}
           onClick={handleCanvasClick}
           title="Click anywhere on the floor to walk"
-          className="w-[120%] lg:w-[126%] h-[112%] -ml-[4%] lg:-ml-[6%] cursor-pointer block"
+          className="w-full sm:w-[110%] lg:w-[126%] h-[106%] lg:h-[112%] ml-0 sm:-ml-[3%] lg:-ml-[6%] cursor-pointer block"
         />
       </div>
 
       {/* Subtle studio caption + WCAG 2.2.2 Pause/Play control outside masked container */}
-      <div className="absolute bottom-3 right-4 lg:right-12 xl:right-16 z-20 flex items-center gap-2.5">
+      <div className="absolute top-2 sm:top-auto sm:bottom-3 right-3 sm:right-4 lg:right-12 xl:right-16 z-20 flex items-center gap-2">
         {!hasInteracted && (
           <span className="hidden sm:inline font-mono text-[11px] text-text-muted bg-bg/85 backdrop-blur-sm px-2.5 py-1 rounded-control border border-white/10">
             Click anywhere on the floor to walk

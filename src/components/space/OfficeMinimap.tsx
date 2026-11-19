@@ -77,7 +77,7 @@ export function OfficeMinimap({
           className="w-2 h-2 rounded-full flex-shrink-0"
           style={{ backgroundColor: currentZone?.color || "#37E6C4" }}
         />
-        <span className="truncate max-w-[7.5rem] sm:max-w-[9rem] font-semibold">
+        <span className="hidden sm:inline truncate max-w-[9rem] font-semibold">
           {currentZone?.name || "Open Floor"}
         </span>
         {currentZone?.isPrivate && (

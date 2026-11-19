@@ -275,7 +275,7 @@ export function SpatialAudioDemo() {
         <div
           ref={floorRef}
           onPointerDown={onFloorPointerDown}
-          className="relative w-full aspect-[16/10] bg-surface border border-white/15 rounded-sm overflow-hidden select-none cursor-crosshair"
+          className="relative w-full aspect-[16/10] bg-surface border border-white/15 rounded-sm overflow-hidden select-none touch-none cursor-crosshair"
           style={{
             backgroundImage:
               "radial-gradient(rgba(255,255,255,0.07) 1px, transparent 1px)",
@@ -283,8 +283,8 @@ export function SpatialAudioDemo() {
           }}
         >
           {/* Open Floor Zone Label */}
-          <span className="absolute top-3 left-3.5 font-mono text-[10px] uppercase tracking-[0.16em] text-text-muted pointer-events-none">
-            Open Floor · Distance Roll-off
+          <span className="absolute top-2.5 sm:top-3 left-2.5 sm:left-3.5 font-mono text-[9px] sm:text-[10px] uppercase tracking-[0.14em] sm:tracking-[0.16em] text-text-muted pointer-events-none">
+            Open Floor<span className="hidden sm:inline"> · Distance Roll-off</span>
           </span>
 
           {/* Glass Boardroom Enclosure (x >= 11/16 = 68.75%) */}
@@ -300,7 +300,7 @@ export function SpatialAudioDemo() {
             <span className="absolute top-[48%] -left-5 -translate-y-1/2 font-mono text-[9px] uppercase tracking-wider px-1 py-0.5 bg-bg text-accent border border-accent/40">
               Door
             </span>
-            <span className="absolute top-3 right-3 font-mono text-[10px] uppercase tracking-[0.16em] text-accent">
+            <span className="absolute top-2.5 sm:top-3 right-2 sm:right-3 font-mono text-[9px] sm:text-[10px] uppercase tracking-[0.12em] sm:tracking-[0.16em] text-accent">
               Glass Boardroom
             </span>
           </div>

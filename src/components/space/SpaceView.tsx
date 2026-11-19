@@ -63,6 +63,7 @@ export interface SpaceViewProps {
   maxParticipants?: number;
   planTier?: string;
   isManagedWorkspace?: boolean;
+  ownerPasscode?: string | null;
 }
 
 const WATERCOOLER_PROMPTS = [
@@ -98,11 +99,14 @@ export function SpaceView({
   maxParticipants,
   planTier,
   isManagedWorkspace = false,
+  ownerPasscode = null,
 }: SpaceViewProps) {
   const [map] = useState<OfficeTilemap>(() => createDefaultOfficeMap());
   const isDesktop = useIsDesktop();
   const [viewMode, setViewMode] = useState<"3d" | "2d" | "call">(initialViewMode);
   const [videoLayout, setVideoLayout] = useState<"floating" | "docked">("docked");
+  const [ownerCodeOpen, setOwnerCodeOpen] = useState(false);
+  const [ownerCodeCopied, setOwnerCodeCopied] = useState(false);
 
   const [initialPeer] = useState<PeerState>(() => ({
     id: `peer_${Math.random().toString(36).substring(2, 9)}`,
@@ -412,10 +416,13 @@ export function SpaceView({
 
   const handleCopyInvite = async () => {
     if (typeof window === "undefined") return;
+    const shareUrl = ownerPasscode
+      ? `${window.location.origin}/space/${spaceSlug}?code=${encodeURIComponent(ownerPasscode)}`
+      : window.location.href;
     try {
-      await navigator.clipboard.writeText(window.location.href);
+      await navigator.clipboard.writeText(shareUrl);
       setInviteCopied(true);
-      setCopyStatusText("Invite link copied");
+      setCopyStatusText(ownerPasscode ? "Passworded invite link copied" : "Invite link copied");
       setTimeout(() => {
         setInviteCopied(false);
         setCopyStatusText("");
@@ -562,6 +569,28 @@ export function SpaceView({
               {audioScope === "office" ? "Office" : "Prox"}
             </span>
           </button>
+
+          {ownerPasscode && (
+            <button
+              type="button"
+              onClick={() => {
+                setOwnerCodeOpen((v) => !v);
+                void navigator.clipboard?.writeText(ownerPasscode);
+                setOwnerCodeCopied(true);
+                setTimeout(() => setOwnerCodeCopied(false), 2000);
+              }}
+              title="Click to reveal and copy your room passcode"
+              className="h-8 px-2.5 text-[11px] bg-accent/15 hover:bg-accent/25 backdrop-blur-xl border border-accent/40 text-accent rounded-full flex items-center gap-1.5 font-mono transition-colors shadow-arcade-sm"
+            >
+              <span>Key:</span>
+              <strong className="text-text">
+                {ownerCodeOpen ? ownerPasscode : "••••"}
+              </strong>
+              {ownerCodeCopied && (
+                <span className="hidden sm:inline text-[10px] text-accent">Copied</span>
+              )}
+            </button>
+          )}
 
           <button
             type="button"

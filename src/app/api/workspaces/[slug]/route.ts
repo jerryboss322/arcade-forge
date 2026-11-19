@@ -26,7 +26,7 @@ export async function PATCH(
 
     await ensureAuthSchema();
     const rows = (await db`
-      SELECT "id", "slug", "name", "passcode", "ownerId"
+      SELECT "id", "slug", "name", "passcode", COALESCE("passcodePlain", "officeMap"->>'passcodePlain') AS "passcodePlain", "ownerId"
       FROM "Workspace"
       WHERE "slug" = ${slug}
       LIMIT 1
@@ -35,6 +35,7 @@ export async function PATCH(
       slug: string;
       name: string;
       passcode: string | null;
+      passcodePlain: string | null;
       ownerId: string;
     }>;
 
@@ -53,6 +54,7 @@ export async function PATCH(
 
     const newPasscodePlain = typeof body?.passcode === "string" ? body.passcode.trim() : "";
     let nextPasscodeHash = existing.passcode;
+    let nextPasscodePlain = existing.passcodePlain;
     if (newPasscodePlain) {
       if (newPasscodePlain.length < 4 || newPasscodePlain.length > 64) {
         return NextResponse.json(
@@ -61,11 +63,19 @@ export async function PATCH(
         );
       }
       nextPasscodeHash = hashSecret(newPasscodePlain);
+      nextPasscodePlain = newPasscodePlain;
     }
+
+    const officeMapPatch = JSON.stringify({ passcodePlain: nextPasscodePlain });
 
     await db`
       UPDATE "Workspace"
-      SET "name" = ${nextName}, "passcode" = ${nextPasscodeHash}, "updatedAt" = NOW()
+      SET
+        "name" = ${nextName},
+        "passcode" = ${nextPasscodeHash},
+        "passcodePlain" = ${nextPasscodePlain},
+        "officeMap" = COALESCE("officeMap", '{}'::jsonb) || ${officeMapPatch}::jsonb,
+        "updatedAt" = NOW()
       WHERE "id" = ${existing.id}
     `;
 
@@ -75,13 +85,15 @@ export async function PATCH(
       ownerId: boss.id,
       planTier: boss.plan,
       passcode: nextPasscodeHash,
+      passcodePlain: nextPasscodePlain,
     });
 
     return NextResponse.json({
       success: true,
       name: nextName,
-      invitePath: newPasscodePlain
-        ? `/space/${existing.slug}?code=${encodeURIComponent(newPasscodePlain)}`
+      passcode: nextPasscodePlain,
+      invitePath: nextPasscodePlain
+        ? `/space/${existing.slug}?code=${encodeURIComponent(nextPasscodePlain)}`
         : undefined,
     });
   } catch (err) {

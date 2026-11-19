@@ -30,6 +30,8 @@ interface WorkspaceItem {
   maxParticipants: number;
   allowScreenShare: boolean;
   hasPasscode: boolean;
+  passcode?: string | null;
+  invitePath?: string;
   createdAt: string;
 }
 
@@ -54,9 +56,12 @@ export default function AdminPortalPage() {
   const [wsError, setWsError] = useState<string | null>(null);
   const [wsSubmitting, setWsSubmitting] = useState(false);
 
-  // Latest plain invite links generated in this session (passcodes are hashed in DB)
+  // Latest plain invite links & passcodes (persisted in DB for the authenticated owner)
   const [invitePaths, setInvitePaths] = useState<Record<string, string>>({});
+  const [passcodesBySlug, setPasscodesBySlug] = useState<Record<string, string>>({});
+  const [revealedPasscodes, setRevealedPasscodes] = useState<Record<string, boolean>>({});
   const [copiedSlug, setCopiedSlug] = useState<string | null>(null);
+  const [copiedPasscodeSlug, setCopiedPasscodeSlug] = useState<string | null>(null);
   const [editingPasscodeSlug, setEditingPasscodeSlug] = useState<string | null>(null);
   const [rotatedPasscode, setRotatedPasscode] = useState("");
   const [actionMessage, setActionMessage] = useState<string | null>(null);
@@ -91,8 +96,23 @@ export default function AdminPortalPage() {
           workspaces?: WorkspaceItem[];
           limits?: PlanEntitlements;
         };
-        setWorkspaces(wsData.workspaces ?? []);
+        const list = wsData.workspaces ?? [];
+        setWorkspaces(list);
         if (wsData.limits) setLimits(wsData.limits);
+        setPasscodesBySlug((prev) => {
+          const next = { ...prev };
+          for (const w of list) {
+            if (w.passcode) next[w.slug] = w.passcode;
+          }
+          return next;
+        });
+        setInvitePaths((prev) => {
+          const next = { ...prev };
+          for (const w of list) {
+            if (w.invitePath) next[w.slug] = w.invitePath;
+          }
+          return next;
+        });
       }
     } finally {
       setLoading(false);
@@ -170,12 +190,18 @@ export default function AdminPortalPage() {
         return;
       }
       if (data.workspace && data.invitePath) {
+        const createdSlug = data.workspace.slug;
+        const savedCode = data.workspace.passcode || wsPasscode.trim();
         setInvitePaths((prev) => ({
           ...prev,
-          [data.workspace!.slug]: data.invitePath!,
+          [createdSlug]: data.invitePath!,
         }));
+        if (savedCode) {
+          setPasscodesBySlug((prev) => ({ ...prev, [createdSlug]: savedCode }));
+          setRevealedPasscodes((prev) => ({ ...prev, [createdSlug]: true }));
+        }
         setActionMessage(
-          `Workspace "${data.workspace.name}" created. Copy your passworded employee link below!`
+          `Workspace "${data.workspace.name}" created. Room passcode and 1-click invite link are ready below!`
         );
       }
       setWsName("");
@@ -196,18 +222,24 @@ export default function AdminPortalPage() {
     });
     const data = (await res.json().catch(() => ({}))) as {
       error?: string;
+      passcode?: string;
       invitePath?: string;
     };
     if (!res.ok) {
       setActionMessage(data.error || "Could not update passcode.");
       return;
     }
+    const nextCode = data.passcode || rotatedPasscode.trim();
+    if (nextCode) {
+      setPasscodesBySlug((prev) => ({ ...prev, [slug]: nextCode }));
+      setRevealedPasscodes((prev) => ({ ...prev, [slug]: true }));
+    }
     if (data.invitePath) {
       setInvitePaths((prev) => ({ ...prev, [slug]: data.invitePath! }));
     }
     setEditingPasscodeSlug(null);
     setRotatedPasscode("");
-    setActionMessage(`Updated passcode for /space/${slug}. Share the new link with employees.`);
+    setActionMessage(`Updated passcode for /space/${slug}. Share the new passcode or link with employees.`);
   };
 
   const handleDeleteWorkspace = async (slug: string) => {
@@ -221,7 +253,10 @@ export default function AdminPortalPage() {
   };
 
   const handleCopyInvite = async (slug: string) => {
-    const path = invitePaths[slug] || `/space/${slug}`;
+    const code = passcodesBySlug[slug];
+    const path =
+      invitePaths[slug] ||
+      (code ? `/space/${slug}?code=${encodeURIComponent(code)}` : `/space/${slug}`);
     const fullUrl =
       typeof window !== "undefined" ? `${window.location.origin}${path}` : path;
     try {
@@ -230,6 +265,16 @@ export default function AdminPortalPage() {
       setTimeout(() => setCopiedSlug(null), 2000);
     } catch {
       setActionMessage(`Invite URL: ${fullUrl}`);
+    }
+  };
+
+  const handleCopyPasscode = async (slug: string, code: string) => {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedPasscodeSlug(slug);
+      setTimeout(() => setCopiedPasscodeSlug(null), 2000);
+    } catch {
+      setActionMessage(`Room Passcode for /space/${slug}: ${code}`);
     }
   };
 
@@ -479,6 +524,17 @@ export default function AdminPortalPage() {
                 </li>
               </ul>
             </div>
+
+            {/* Preview of Where Room Passcode Appears */}
+            <div className="p-5 rounded-container bg-surface border border-white/10 space-y-2.5">
+              <div className="flex items-center gap-2 text-xs font-display font-bold text-text">
+                <IconKey className="w-3.5 h-3.5 text-accent shrink-0" />
+                <span>Where you see your Room Passcode</span>
+              </div>
+              <p className="text-xs text-text-muted leading-relaxed">
+                Once signed in, every workspace card in this console—and the top bar inside your live office room—displays your active <strong className="text-text">Room Passcode</strong> with <strong className="text-text">Show / Hide</strong>, <strong className="text-text">Copy Passcode</strong>, and a <strong className="text-text">1-Click Locked Invite Link</strong>.
+              </p>
+            </div>
           </div>
         </div>
       ) : (
@@ -684,14 +740,21 @@ export default function AdminPortalPage() {
               ) : (
                 <div className="space-y-3.5">
                   {workspaces.map((ws) => {
-                    const invitePath = invitePaths[ws.slug];
+                    const code = passcodesBySlug[ws.slug] || ws.passcode || "";
+                    const isRevealed = Boolean(revealedPasscodes[ws.slug]);
+                    const invitePath =
+                      invitePaths[ws.slug] ||
+                      ws.invitePath ||
+                      (code
+                        ? `/space/${ws.slug}?code=${encodeURIComponent(code)}`
+                        : `/space/${ws.slug}`);
                     return (
                       <div
                         key={ws.id}
-                        className="p-5 rounded-container bg-surface border border-white/10 shadow-arcade space-y-3.5"
+                        className="p-4 sm:p-5 rounded-container bg-surface border border-white/10 shadow-arcade space-y-3.5"
                       >
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                          <div className="space-y-1">
+                          <div className="space-y-1 min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
                               <h3 className="font-display text-base font-bold text-text">
                                 {ws.name}
@@ -701,7 +764,9 @@ export default function AdminPortalPage() {
                                 {ws.allowScreenShare ? "Screen Share ON" : "Screen Share Pro"}
                               </span>
                             </div>
-                            <p className="text-xs font-mono text-text-muted">/space/{ws.slug}</p>
+                            <p className="text-xs font-mono text-text-muted break-all">
+                              /space/{ws.slug}
+                            </p>
                           </div>
 
                           <div className="flex flex-wrap items-center gap-2">
@@ -719,9 +784,9 @@ export default function AdminPortalPage() {
                               <IconCopy className="w-3.5 h-3.5 text-accent" />
                               <span>
                                 {copiedSlug === ws.slug
-                                  ? "Copied!"
-                                  : invitePath
-                                    ? "Copy Passworded Link"
+                                  ? "Link Copied!"
+                                  : code
+                                    ? "Copy Locked Link"
                                     : "Copy Space URL"}
                               </span>
                             </button>
@@ -731,12 +796,12 @@ export default function AdminPortalPage() {
                                 setEditingPasscodeSlug(
                                   editingPasscodeSlug === ws.slug ? null : ws.slug
                                 );
-                                setRotatedPasscode("");
+                                setRotatedPasscode(code);
                               }}
                               className="px-3 py-1.5 text-xs font-medium bg-surface-2 border border-white/10 rounded-control text-text-muted hover:text-text hover:border-white/25 inline-flex items-center gap-1.5 transition-colors"
                             >
-                              <IconKey className="w-3.5 h-3.5" />
-                              <span>Reset Passcode</span>
+                              <IconKey className="w-3.5 h-3.5 text-accent" />
+                              <span>Change Passcode</span>
                             </button>
                             <button
                               type="button"
@@ -750,22 +815,85 @@ export default function AdminPortalPage() {
                           </div>
                         </div>
 
-                        {invitePath && (
-                          <div className="p-3 rounded-control bg-bg/90 border border-accent/40 text-[11px] font-mono text-accent break-all">
-                            Share this passworded employee link:{" "}
-                            {typeof window !== "undefined"
-                              ? `${window.location.origin}${invitePath}`
-                              : invitePath}
+                        {/* Dedicated Room Passcode & 1-Click Employee Link Panel */}
+                        <div className="p-3 sm:p-3.5 rounded-control bg-bg/90 border border-accent/35 space-y-2.5">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div className="flex flex-wrap items-center gap-2 text-xs">
+                              <span className="font-mono text-[11px] uppercase tracking-wider text-text-muted flex items-center gap-1.5">
+                                <IconKey className="w-3.5 h-3.5 text-accent shrink-0" />
+                                <span>Room Passcode:</span>
+                              </span>
+                              {code ? (
+                                <code className="px-2 py-0.5 rounded bg-surface-2 border border-white/10 font-mono text-xs text-accent font-semibold">
+                                  {isRevealed ? code : "•".repeat(Math.max(6, code.length))}
+                                </code>
+                              ) : (
+                                <span className="font-mono text-xs text-amber-300">
+                                  Passcode hidden (click Change Passcode to view &amp; set)
+                                </span>
+                              )}
+                            </div>
+
+                            {code ? (
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setRevealedPasscodes((prev) => ({
+                                      ...prev,
+                                      [ws.slug]: !prev[ws.slug],
+                                    }))
+                                  }
+                                  className="px-2.5 py-1 rounded text-[11px] font-mono bg-surface-2 hover:bg-white/10 text-text border border-white/10 transition-colors"
+                                >
+                                  {isRevealed ? "Hide" : "Show"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => void handleCopyPasscode(ws.slug, code)}
+                                  className="px-2.5 py-1 rounded text-[11px] font-mono bg-accent/15 hover:bg-accent/25 text-accent border border-accent/35 inline-flex items-center gap-1 transition-colors"
+                                >
+                                  <IconCopy className="w-3 h-3" />
+                                  <span>
+                                    {copiedPasscodeSlug === ws.slug
+                                      ? "Passcode Copied!"
+                                      : "Copy Passcode"}
+                                  </span>
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setEditingPasscodeSlug(ws.slug);
+                                  setRotatedPasscode("");
+                                }}
+                                className="px-2.5 py-1 rounded text-[11px] font-mono bg-accent text-bg font-semibold"
+                              >
+                                Set Visible Passcode
+                              </button>
+                            )}
                           </div>
-                        )}
+
+                          {code && (
+                            <div className="pt-2 border-t border-white/[0.07] text-[11px] font-mono text-text-muted break-all">
+                              1-Click Employee Link:{" "}
+                              <span className="text-accent">
+                                {typeof window !== "undefined"
+                                  ? `${window.location.origin}${invitePath}`
+                                  : invitePath}
+                              </span>
+                            </div>
+                          )}
+                        </div>
 
                         {editingPasscodeSlug === ws.slug && (
-                          <div className="flex items-center gap-2 pt-3 border-t border-white/[0.08]">
+                          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-3 border-t border-white/[0.08]">
                             <input
                               type="text"
                               value={rotatedPasscode}
                               onChange={(e) => setRotatedPasscode(e.target.value)}
-                              placeholder="New passcode (min 4 chars)"
+                              placeholder="New room passcode (min 4 chars)"
                               className="flex-1 px-3 py-2 text-xs bg-bg border border-[color:var(--color-border-strong)] rounded-control text-text font-mono focus:outline-none focus:border-accent"
                             />
                             <button
@@ -774,7 +902,7 @@ export default function AdminPortalPage() {
                               onClick={() => void handleRotatePasscode(ws.slug)}
                               className="px-4 py-2 text-xs font-display font-semibold bg-accent text-bg rounded-control disabled:opacity-50 hover:brightness-110"
                             >
-                              Save New Link
+                              Save Passcode &amp; Link
                             </button>
                           </div>
                         )}

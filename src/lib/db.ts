@@ -37,6 +37,7 @@ export async function ensureAuthSchema(): Promise<void> {
         "name" TEXT NOT NULL,
         "description" TEXT,
         "passcode" TEXT,
+        "passcodePlain" TEXT,
         "planTier" TEXT NOT NULL DEFAULT 'FREE',
         "maxParticipants" INTEGER NOT NULL DEFAULT 4,
         "allowScreenShare" BOOLEAN NOT NULL DEFAULT false,
@@ -47,6 +48,11 @@ export async function ensureAuthSchema(): Promise<void> {
         CONSTRAINT "Workspace_pkey" PRIMARY KEY ("id"),
         CONSTRAINT "Workspace_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE
       )
+    `;
+
+    await db`
+      ALTER TABLE "Workspace"
+      ADD COLUMN IF NOT EXISTS "passcodePlain" TEXT
     `;
 
     await db`CREATE UNIQUE INDEX IF NOT EXISTS "Workspace_slug_key" ON "Workspace"("slug")`;

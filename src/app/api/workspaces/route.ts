@@ -19,6 +19,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Admin sign-in required." }, { status: 401 });
     }
 
+    await ensureAuthSchema();
     const limits = getPlanEntitlements(boss.plan);
     const rows = (await db`
       SELECT
@@ -30,6 +31,7 @@ export async function GET(req: Request) {
         "maxParticipants",
         "allowScreenShare",
         ("passcode" IS NOT NULL) AS "hasPasscode",
+        COALESCE("passcodePlain", "officeMap"->>'passcodePlain') AS "passcodePlain",
         "createdAt",
         "updatedAt"
       FROM "Workspace"
@@ -44,16 +46,21 @@ export async function GET(req: Request) {
       maxParticipants: number;
       allowScreenShare: boolean;
       hasPasscode: boolean;
+      passcodePlain: string | null;
       createdAt: string;
       updatedAt: string;
     }>;
 
-    // Reflect Boss's current plan limits on every workspace returned
+    // Reflect Boss's current plan limits and owner-visible passcode on every workspace returned
     const workspaces = rows.map((w) => ({
       ...w,
       planTier: boss.plan,
       maxParticipants: limits.maxParticipants,
       allowScreenShare: limits.allowScreenShare,
+      passcode: w.passcodePlain || null,
+      invitePath: w.passcodePlain
+        ? `/space/${w.slug}?code=${encodeURIComponent(w.passcodePlain)}`
+        : `/space/${w.slug}`,
     }));
 
     return NextResponse.json({ user: boss, limits, workspaces });
@@ -138,17 +145,18 @@ export async function POST(req: Request) {
 
     const id = `ws_${crypto.randomBytes(10).toString("hex")}`;
     const passcodeHash = hashSecret(passcode);
+    const officeMapJson = JSON.stringify({ passcodePlain: passcode });
 
     await db`
       INSERT INTO "Workspace" (
-        "id", "slug", "name", "description", "passcode",
+        "id", "slug", "name", "description", "passcode", "passcodePlain",
         "planTier", "maxParticipants", "allowScreenShare",
         "officeMap", "ownerId", "createdAt", "updatedAt"
       )
       VALUES (
-        ${id}, ${slug}, ${name}, ${description}, ${passcodeHash},
+        ${id}, ${slug}, ${name}, ${description}, ${passcodeHash}, ${passcode},
         ${boss.plan}, ${limits.maxParticipants}, ${limits.allowScreenShare},
-        '{}'::jsonb, ${boss.id}, NOW(), NOW()
+        ${officeMapJson}::jsonb, ${boss.id}, NOW(), NOW()
       )
     `;
 
@@ -158,6 +166,7 @@ export async function POST(req: Request) {
       ownerId: boss.id,
       planTier: boss.plan,
       passcode: passcodeHash,
+      passcodePlain: passcode,
     });
 
     return NextResponse.json(
@@ -171,6 +180,8 @@ export async function POST(req: Request) {
           maxParticipants: limits.maxParticipants,
           allowScreenShare: limits.allowScreenShare,
           hasPasscode: true,
+          passcode,
+          invitePath: `/space/${slug}?code=${encodeURIComponent(passcode)}`,
         },
         invitePath: `/space/${slug}?code=${encodeURIComponent(passcode)}`,
       },

@@ -34,6 +34,7 @@ interface AccessInfo {
   maxParticipants: number;
   allowScreenShare: boolean;
   isOwner: boolean;
+  passcode?: string | null;
 }
 
 function pickAvatarColor(seed: string): string {
@@ -281,10 +282,12 @@ export default function SpaceSlugPage() {
   if (!preJoin) {
     return (
       <PreJoinLobby
+        spaceSlug={slug}
         spaceName={access.name || preset.name}
         planTier={access.planTier}
         maxParticipants={access.maxParticipants}
         isManagedWorkspace={access.isManaged}
+        ownerPasscode={access.isOwner ? (access.passcode ?? null) : null}
         initialName={suggestedName}
         initialColor={pickAvatarColor(suggestedName)}
         onJoin={(config) => {
@@ -316,6 +319,7 @@ export default function SpaceSlugPage() {
       maxParticipants={access.maxParticipants}
       planTier={access.planTier}
       isManagedWorkspace={access.isManaged}
+      ownerPasscode={access.isOwner ? (access.passcode ?? null) : null}
     />
   );
 }

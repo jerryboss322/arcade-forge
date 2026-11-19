@@ -36,10 +36,12 @@ export interface PreJoinConfig {
 }
 
 interface PreJoinLobbyProps {
+  spaceSlug?: string;
   spaceName: string;
   planTier?: string;
   maxParticipants?: number;
   isManagedWorkspace?: boolean;
+  ownerPasscode?: string | null;
   initialName: string;
   initialColor: string;
   onJoin: (config: PreJoinConfig) => void;
@@ -61,10 +63,12 @@ function describeLobbyError(err: unknown, kind: "camera" | "microphone"): string
 }
 
 export function PreJoinLobby({
+  spaceSlug,
   spaceName,
   planTier,
   maxParticipants,
   isManagedWorkspace = false,
+  ownerPasscode = null,
   initialName,
   initialColor,
   onJoin,
@@ -73,6 +77,9 @@ export function PreJoinLobby({
   const [avatarColor, setAvatarColor] = useState(initialColor);
   const [status, setStatus] = useState<string>(OFFICE_STATUS_PRESETS[0] ?? "Focusing");
   const [initialViewMode, setInitialViewMode] = useState<"3d" | "call">("3d");
+  const [showPasscode, setShowPasscode] = useState(false);
+  const [passcodeCopied, setPasscodeCopied] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const [stream, setStream] = useState<MediaStream | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -368,17 +375,17 @@ export function PreJoinLobby({
   );
 
   return (
-    <div className="min-h-dvh w-full bg-bg flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-dvh w-full bg-bg flex items-center justify-center p-3 sm:p-4 relative overflow-x-hidden overflow-y-auto">
       <div
         aria-hidden="true"
         className="pointer-events-none absolute top-1/4 left-1/2 -translate-x-1/2 w-[520px] h-[520px] rounded-full bg-accent/10 blur-3xl"
       />
       <form
         onSubmit={handleSubmit}
-        className="relative w-full max-w-2xl rounded-container border border-white/10 bg-surface/95 backdrop-blur-2xl shadow-arcade-lg overflow-hidden"
+        className="relative w-full max-w-2xl rounded-container border border-white/10 bg-surface/95 backdrop-blur-2xl shadow-arcade-lg overflow-hidden my-auto"
       >
         {/* Header */}
-        <div className="px-6 py-4 border-b border-white/[0.08] bg-surface-2/50 flex flex-wrap items-center justify-between gap-2">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-white/[0.08] bg-surface-2/50 flex flex-wrap items-center justify-between gap-2">
           <div>
             <span className="text-[11px] font-mono text-accent uppercase tracking-wider">
               {isManagedWorkspace
@@ -418,10 +425,58 @@ export function PreJoinLobby({
           </div>
         </div>
 
-        <div className="p-5 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-5">
+        {/* Keyholder Room Passcode Bar (shown only to authenticated workspace owner) */}
+        {ownerPasscode && (
+          <div className="px-4 sm:px-6 py-2.5 bg-accent/10 border-b border-accent/30 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="flex flex-wrap items-center gap-2 font-mono">
+              <span className="text-text-muted text-[11px] uppercase tracking-wider">
+                Keyholder Room Passcode:
+              </span>
+              <code className="px-2 py-0.5 rounded bg-bg/80 border border-white/15 text-accent font-semibold">
+                {showPasscode ? ownerPasscode : "•".repeat(Math.max(6, ownerPasscode.length))}
+              </code>
+            </div>
+            <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
+              <button
+                type="button"
+                onClick={() => setShowPasscode((v) => !v)}
+                className="px-2 py-0.5 rounded bg-surface-2 hover:bg-white/10 text-text border border-white/15"
+              >
+                {showPasscode ? "Hide" : "Show"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void navigator.clipboard?.writeText(ownerPasscode);
+                  setPasscodeCopied(true);
+                  setTimeout(() => setPasscodeCopied(false), 2000);
+                }}
+                className="px-2 py-0.5 rounded bg-surface-2 hover:bg-white/10 text-accent border border-accent/35"
+              >
+                {passcodeCopied ? "Copied!" : "Copy Code"}
+              </button>
+              {spaceSlug && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = `${window.location.origin}/space/${spaceSlug}?code=${encodeURIComponent(ownerPasscode)}`;
+                    void navigator.clipboard?.writeText(url);
+                    setLinkCopied(true);
+                    setTimeout(() => setLinkCopied(false), 2000);
+                  }}
+                  className="px-2 py-0.5 rounded bg-accent text-bg font-semibold"
+                >
+                  {linkCopied ? "Link Copied!" : "Copy Locked Link"}
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-5">
           {/* Left: Live Camera Preview + Audio Meter + Device Pickers */}
           <div className="space-y-3">
-            <div className="relative aspect-[4/3] w-full rounded-card overflow-hidden border border-white/10 bg-black">
+            <div className="relative aspect-[16/10] sm:aspect-[4/3] w-full rounded-card overflow-hidden border border-white/10 bg-black">
               {hasLivePreviewVideo && stream ? (
                 <StreamVideo
                   stream={stream}
