@@ -150,10 +150,10 @@ export function IsometricOfficeHero({
       ctx.scale(dpr, dpr);
       ctx.clearRect(0, 0, width, height);
 
-      const tileW = Math.max(38, Math.min(54, width * 0.054));
+      const tileW = Math.max(41, Math.min(56, width * 0.056));
       const tileH = tileW * 0.5;
-      const originX = width * 0.37;
-      const originY = height * 0.09;
+      const originX = width * 0.305;
+      const originY = height * 0.07;
       geomRef.current = { tileW, tileH, originX, originY };
 
       const toIso = (gx: number, gy: number): [number, number] => [
@@ -394,9 +394,10 @@ export function IsometricOfficeHero({
         ctx.fillText(name, cx, cy - 35 + bob);
       };
 
-      // 1. Extruded Architectural Diorama Floor Slab (22 x 16)
+      // 1. Extruded Architectural Diorama Floor Slab (gx: 2..22, gy: 0..16)
       const slabDepth = 16;
-      const [s0x, s0y] = toIso(0, 16);
+      const minGx = 2;
+      const [s0x, s0y] = toIso(minGx, 16);
       const [s1x, s1y] = toIso(22, 16);
       const [s2x, s2y] = toIso(22, 0);
 
@@ -421,12 +422,12 @@ export function IsometricOfficeHero({
       ctx.fill();
 
       // Main floor surface
-      drawDiamond(0, 0, 22, 16, "#1B1A20", "rgba(246, 243, 236, 0.12)");
+      drawDiamond(minGx, 0, 22 - minGx, 16, "#1B1A20", "rgba(246, 243, 236, 0.12)");
 
       // Subtle architectural tile grid
       ctx.strokeStyle = "rgba(255, 255, 255, 0.055)";
       ctx.lineWidth = 1;
-      for (let gx = 1; gx < 22; gx++) {
+      for (let gx = minGx + 1; gx < 22; gx++) {
         const [ax, ay] = toIso(gx, 0);
         const [bx, by] = toIso(gx, 16);
         ctx.beginPath();
@@ -435,7 +436,7 @@ export function IsometricOfficeHero({
         ctx.stroke();
       }
       for (let gy = 1; gy < 16; gy++) {
-        const [ax, ay] = toIso(0, gy);
+        const [ax, ay] = toIso(minGx, gy);
         const [bx, by] = toIso(22, gy);
         ctx.beginPath();
         ctx.moveTo(ax, ay);
@@ -445,10 +446,12 @@ export function IsometricOfficeHero({
 
       // 2. Floor Rugs & Warm Overhead Studio Light Pools
       drawDiamond(4.4, 2.0, 7.6, 7.6, "#222128", "rgba(246, 243, 236, 0.15)");
+      drawDiamond(4.6, 10.2, 6.8, 4.6, "rgba(245, 158, 11, 0.06)", "rgba(246, 243, 236, 0.13)");
       drawDiamond(13.0, 1.5, 7.5, 6.5, "rgba(245, 158, 11, 0.095)", "rgba(245, 158, 11, 0.42)");
       drawDiamond(12.5, 9.6, 7.6, 5.4, "rgba(180, 118, 66, 0.09)", "rgba(246, 243, 236, 0.12)");
 
       drawLightPool(8.2, 5.8, tileW * 3.8, "rgba(251, 191, 36, 0.11)");
+      drawLightPool(7.9, 12.4, tileW * 2.9, "rgba(245, 158, 11, 0.10)");
       drawLightPool(16.8, 4.6, tileW * 3.6, "rgba(245, 158, 11, 0.16)");
       drawLightPool(15.6, 12.2, tileW * 2.8, "rgba(245, 158, 11, 0.11)");
 
@@ -503,7 +506,24 @@ export function IsometricOfficeHero({
       // Presentation wall display with glowing amber slide accent
       drawBox(15.5, 1.7, 2.4, 0.2, 23, "#25242B", "#141318", "#F59E0B");
 
-      // 6. Espresso Lounge Counter + Animated Steam Wisps
+      // 6. Espresso Lounge Counter + Animated Steam Wisps + West Studio Lounge Nook
+      // West lounge sofa & low walnut coffee table (bridges the south-west corner beside the hero text)
+      drawBox(5.6, 11.1, 2.6, 0.85, 8.5, "#3A363E", "#28252B", "#1F1D22", "rgba(255,255,255,0.12)");
+      drawBox(5.6, 11.1, 2.6, 0.24, 13.5, "#47424C", "#312E36", "#252229");
+      drawBox(6.1, 12.45, 1.65, 0.9, 6.5, "#9A6E47", "#6B4A2E", "#4E3520", "rgba(245, 158, 11, 0.22)");
+      // Warm amber studio floor lamp beside sofa
+      const [flX, flY] = toIso(8.8, 11.3);
+      ctx.strokeStyle = "rgba(245, 158, 11, 0.65)";
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.moveTo(flX, flY);
+      ctx.lineTo(flX, flY - 19);
+      ctx.stroke();
+      ctx.fillStyle = "#FBBF24";
+      ctx.beginPath();
+      ctx.arc(flX, flY - 20, 3, 0, Math.PI * 2);
+      ctx.fill();
+
       drawBox(14.1, 11.2, 3.1, 1.15, 12.5, "#875E3B", "#5B3E26", "#422C1A", "rgba(245, 158, 11, 0.25)");
       drawBox(14.5, 11.4, 0.72, 0.72, 20, "#F59E0B", "#B45309", "#78350F");
 
@@ -682,10 +702,10 @@ export function IsometricOfficeHero({
         className="w-full h-full"
         style={{
           WebkitMaskImage:
-            "linear-gradient(to right, transparent 0%, black 14%, black 100%), linear-gradient(to top, transparent 0%, black 14%, black 100%)",
+            "linear-gradient(to right, transparent 0%, black 7%, black 100%), linear-gradient(to top, transparent 0%, black 12%, black 100%)",
           WebkitMaskComposite: "source-in",
           maskImage:
-            "linear-gradient(to right, transparent 0%, black 14%, black 100%), linear-gradient(to top, transparent 0%, black 14%, black 100%)",
+            "linear-gradient(to right, transparent 0%, black 7%, black 100%), linear-gradient(to top, transparent 0%, black 12%, black 100%)",
           maskComposite: "intersect",
         }}
       >
@@ -693,12 +713,12 @@ export function IsometricOfficeHero({
           ref={canvasRef}
           onClick={handleCanvasClick}
           title="Click anywhere on the floor to walk"
-          className="w-[122%] lg:w-[130%] h-[112%] -ml-[6%] lg:-ml-[10%] cursor-pointer block"
+          className="w-[120%] lg:w-[126%] h-[112%] -ml-[4%] lg:-ml-[6%] cursor-pointer block"
         />
       </div>
 
       {/* Subtle studio caption + WCAG 2.2.2 Pause/Play control outside masked container */}
-      <div className="absolute bottom-3 right-4 lg:right-28 xl:right-40 z-20 flex items-center gap-2.5">
+      <div className="absolute bottom-3 right-4 lg:right-12 xl:right-16 z-20 flex items-center gap-2.5">
         {!hasInteracted && (
           <span className="hidden sm:inline font-mono text-[11px] text-text-muted bg-bg/85 backdrop-blur-sm px-2.5 py-1 rounded-control border border-white/10">
             Click anywhere on the floor to walk

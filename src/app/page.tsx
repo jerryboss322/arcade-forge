@@ -130,21 +130,21 @@ export default function HomePage() {
     <div className="min-w-0">
       {/* 01 · SIGNATURE EDITORIAL HERO — Live Floor Console Synced to Isometric Diorama */}
       <section className="relative overflow-hidden border-b border-white/[0.07] bg-bg">
-        {/* Warm studio light spill unifying the isometric floor with the editorial column */}
+        {/* Warm studio light spill bridging the seam between the left copy and the isometric floor */}
         <div
           aria-hidden="true"
           className="pointer-events-none absolute inset-0"
           style={{
             background:
-              "radial-gradient(58% 72% at 68% 46%, rgba(245, 158, 11, 0.065), transparent 72%)",
+              "radial-gradient(56% 74% at 54% 48%, rgba(245, 158, 11, 0.075), transparent 74%)",
           }}
         />
 
-        <div className="max-w-[1320px] mx-auto px-4 sm:px-6 md:px-8 pt-12 md:pt-16 pb-10 lg:pb-14 relative">
-          <div className="grid grid-cols-1 lg:grid-cols-12 items-center gap-10 lg:gap-0">
-            <div className="lg:col-span-5 relative z-10 space-y-6 lg:pr-4">
+        <div className="max-w-[1240px] mx-auto px-4 sm:px-6 md:px-8 pt-10 md:pt-14 pb-10 lg:pb-12 relative">
+          <div className="grid grid-cols-1 lg:grid-cols-12 items-center gap-8 lg:gap-0">
+            <div className="lg:col-span-5 relative z-20 space-y-6">
               <h1
-                className="font-editorial font-normal text-text tracking-[-0.025em] leading-[0.98] [text-wrap:normal] lg:w-[116%]"
+                className="font-editorial font-normal text-text tracking-[-0.025em] leading-[0.98] [text-wrap:normal]"
                 style={{ fontSize: "clamp(2.7rem, 1.75rem + 2.4vw, 4.35rem)" }}
               >
                 <span className="block sm:whitespace-nowrap">Walk up to a desk.</span>
@@ -154,12 +154,12 @@ export default function HomePage() {
                 </span>
               </h1>
 
-              <p className="text-[15px] sm:text-base text-text-muted leading-[1.6] max-w-[42ch]">
+              <p className="text-[15px] sm:text-base text-text-muted leading-[1.6] max-w-[40ch]">
                 A live office floor in a browser tab. Pull beside a teammate for a quick question—or step behind glass when you need quiet.
               </p>
 
               {/* Signature Live Floor Telemetry + Direct Room Switcher (Synced with Diorama) */}
-              <div className="border-y border-white/[0.09] py-4 space-y-3 max-w-[440px]">
+              <div className="border-y border-white/[0.09] py-4 space-y-3 max-w-[430px]">
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2.5 min-w-0 text-xs">
                     {floorStatus.isSealed ? (
@@ -245,7 +245,7 @@ export default function HomePage() {
               {/* Signature Inline Floor Intercom Launcher */}
               <form
                 onSubmit={handleHeroLaunch}
-                className="max-w-[440px] flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-0.5"
+                className="max-w-[430px] flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-0.5"
               >
                 <div className="flex-1 flex items-center bg-surface border border-[color:var(--color-border-strong)]/80 focus-within:border-accent rounded-control px-3.5 py-2.5 transition-colors">
                   <span className="font-mono text-xs text-text-muted/70 mr-1 select-none shrink-0">
@@ -286,7 +286,7 @@ export default function HomePage() {
               </div>
             </div>
 
-            <div className="lg:col-span-7 relative lg:-mr-28 xl:-mr-40 lg:-mb-12">
+            <div className="lg:col-span-7 relative z-10 lg:-ml-4 xl:-ml-6 lg:-mr-12 xl:-mr-16 lg:-mb-10">
               <IsometricOfficeHero
                 requestedZone={requestedZone}
                 onStatusChange={setFloorStatus}
