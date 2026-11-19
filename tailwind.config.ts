@@ -32,6 +32,7 @@ const config: Config = {
       },
       fontFamily: {
         display: ["var(--font-display)", "system-ui", "-apple-system", "sans-serif"],
+        editorial: ["var(--font-editorial)", "Georgia", "Times New Roman", "serif"],
         sans: ["var(--font-sans)", "system-ui", "-apple-system", "sans-serif"],
         mono: ["var(--font-mono)", "ui-monospace", "SFMono-Regular", "monospace"],
       },

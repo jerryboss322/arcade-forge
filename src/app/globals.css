@@ -21,8 +21,33 @@
   --color-danger: #EF4444;
 
   --font-display: "Bricolage Grotesque", system-ui, -apple-system, sans-serif;
+  --font-editorial: "Instrument Serif", Georgia, "Times New Roman", serif;
   --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+}
+
+@keyframes eq-bounce {
+  0%, 100% {
+    transform: scaleY(0.35);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+}
+
+.animate-eq-1 {
+  animation: eq-bounce 0.9s ease-in-out infinite;
+  transform-origin: bottom;
+}
+
+.animate-eq-2 {
+  animation: eq-bounce 0.72s ease-in-out 0.18s infinite;
+  transform-origin: bottom;
+}
+
+.animate-eq-3 {
+  animation: eq-bounce 0.84s ease-in-out 0.34s infinite;
+  transform-origin: bottom;
 }
 
 html {

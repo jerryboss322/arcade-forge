@@ -13,6 +13,23 @@ const bricolage = localFont({
   display: "swap",
 });
 
+const instrumentSerif = localFont({
+  src: [
+    {
+      path: "./fonts/instrument-serif-latin-normal.woff2",
+      weight: "400",
+      style: "normal",
+    },
+    {
+      path: "./fonts/instrument-serif-latin-italic.woff2",
+      weight: "400",
+      style: "italic",
+    },
+  ],
+  variable: "--font-editorial",
+  display: "swap",
+});
+
 const inter = Inter({
   subsets: ["latin"],
   variable: "--font-sans",
@@ -39,7 +56,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`dark ${bricolage.variable} ${inter.variable} ${jetbrainsMono.variable}`}
+      className={`dark ${bricolage.variable} ${instrumentSerif.variable} ${inter.variable} ${jetbrainsMono.variable}`}
     >
       <body className="bg-bg text-text font-sans antialiased pb-16 md:pb-0 flex flex-col min-h-dvh">
         <ArcadeProvider>

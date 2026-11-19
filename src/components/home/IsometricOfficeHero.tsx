@@ -38,24 +38,75 @@ const TEAMMATES: StaticTeammate[] = [
   { id: "sam", name: "Sam", x: 15.3, y: 13.1, shirt: "#C26D3A", hair: "#231E1B", isPrivate: false, talking: true, phase: 1.2 },
 ];
 
+export type HeroZoneId = "desks" | "boardroom" | "espresso" | "corridor";
+
+export interface HeroFloorStatus {
+  zone: HeroZoneId;
+  zoneLabel: string;
+  audiblePeers: string[];
+  isSealed: boolean;
+}
+
+const ZONE_DESTINATIONS: Record<"desks" | "boardroom" | "espresso", { x: number; y: number }> = {
+  desks: { x: 8.6, y: 6.4 },
+  boardroom: { x: 15.1, y: 4.9 },
+  espresso: { x: 14.0, y: 12.6 },
+};
+
 function isInBoardroom(gx: number, gy: number): boolean {
   return gx >= 13 && gx <= 20.5 && gy >= 1.5 && gy <= 8.0;
 }
 
-export function IsometricOfficeHero() {
+function getZoneInfo(gx: number, gy: number): { zone: HeroZoneId; zoneLabel: string } {
+  if (isInBoardroom(gx, gy)) {
+    return { zone: "boardroom", zoneLabel: "Glass Boardroom" };
+  }
+  if (gx >= 4.0 && gx <= 12.2 && gy >= 1.8 && gy <= 9.8) {
+    return { zone: "desks", zoneLabel: "Open Desks" };
+  }
+  if (gx >= 12.2 && gx <= 20.4 && gy >= 9.4 && gy <= 15.2) {
+    return { zone: "espresso", zoneLabel: "Espresso Bar" };
+  }
+  return { zone: "corridor", zoneLabel: "Open Floor" };
+}
+
+interface IsometricOfficeHeroProps {
+  requestedZone?: { zone: "desks" | "boardroom" | "espresso"; seq: number } | null;
+  onStatusChange?: (status: HeroFloorStatus) => void;
+}
+
+export function IsometricOfficeHero({
+  requestedZone,
+  onStatusChange,
+}: IsometricOfficeHeroProps = {}) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isPaused, setIsPaused] = useState(false);
   const [hasInteracted, setHasInteracted] = useState(false);
 
   const isPausedRef = useRef(false);
   isPausedRef.current = isPaused;
+  const onStatusChangeRef = useRef(onStatusChange);
+  onStatusChangeRef.current = onStatusChange;
+  const lastStatusSigRef = useRef("");
 
   // Interactive click-to-walk target state (kept in ref for 60fps canvas loop)
   const manualModeRef = useRef(false);
-  const youPosRef = useRef({ x: 8.4, y: 6.5 });
-  const targetPosRef = useRef({ x: 8.4, y: 6.5 });
+  const youPosRef = useRef({ x: 8.6, y: 6.4 });
+  const targetPosRef = useRef({ x: 8.6, y: 6.4 });
   const clickRippleRef = useRef<{ x: number; y: number; bornAt: number } | null>(null);
   const geomRef = useRef({ tileW: 46, tileH: 23, originX: 340, originY: 50 });
+
+  useEffect(() => {
+    if (!requestedZone) return;
+    const dest = ZONE_DESTINATIONS[requestedZone.zone];
+    manualModeRef.current = true;
+    targetPosRef.current = { x: dest.x, y: dest.y };
+    clickRippleRef.current = { x: dest.x, y: dest.y, bornAt: performance.now() };
+    setHasInteracted(true);
+    if (isPausedRef.current) {
+      youPosRef.current = { x: dest.x, y: dest.y };
+    }
+  }, [requestedZone]);
 
   useEffect(() => {
     const reduceMotion =
@@ -508,7 +559,7 @@ export function IsometricOfficeHero() {
 
       // 8. Draw live spatial acoustic beams between "You" and audible teammates
       const [youIsoX, youIsoY] = toIso(you.x, you.y);
-      let audibleCount = 0;
+      const audiblePeers: string[] = [];
       for (const peer of TEAMMATES) {
         const gain = computeSpatialGain({
           dist: Math.hypot(peer.x - you.x, peer.y - you.y),
@@ -518,7 +569,7 @@ export function IsometricOfficeHero() {
           scope: "proximity",
         });
         if (gain > 0.12) {
-          audibleCount++;
+          audiblePeers.push(peer.name);
           const [px, py] = toIso(peer.x, peer.y);
           ctx.save();
           ctx.setLineDash([4, 4]);
@@ -529,6 +580,21 @@ export function IsometricOfficeHero() {
           ctx.lineTo(px, py - 12);
           ctx.stroke();
           ctx.restore();
+        }
+      }
+
+      const audibleCount = audiblePeers.length;
+      if (onStatusChangeRef.current) {
+        const { zone, zoneLabel } = getZoneInfo(you.x, you.y);
+        const sig = `${zone}|${youPrivate ? 1 : 0}|${audiblePeers.join(",")}`;
+        if (sig !== lastStatusSigRef.current) {
+          lastStatusSigRef.current = sig;
+          onStatusChangeRef.current({
+            zone,
+            zoneLabel,
+            audiblePeers,
+            isSealed: youPrivate,
+          });
         }
       }
 

@@ -89,7 +89,7 @@ export function GlobalHeader() {
 
   return (
     <>
-      <header className="sticky top-0 z-40 h-16 bg-bg/85 backdrop-blur-xl border-b border-white/[0.07]">
+      <header className="sticky top-0 z-40 h-16 bg-bg/92 backdrop-blur-xl border-b border-white/[0.07]">
         <div className="max-w-[1320px] mx-auto h-full px-4 sm:px-6 md:px-8 flex items-center justify-between gap-4">
           {/* Left: Brand + 3 Minimal Directory Links */}
           <div className="flex items-center gap-6 min-w-0">

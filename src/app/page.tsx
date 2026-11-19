@@ -4,9 +4,12 @@ import React, { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArcadeDialog } from "@/components/ui/ArcadeDialog";
-import { IsometricOfficeHero } from "@/components/home/IsometricOfficeHero";
+import {
+  IsometricOfficeHero,
+  type HeroFloorStatus,
+} from "@/components/home/IsometricOfficeHero";
 import { SpatialAudioDemo } from "@/components/home/SpatialAudioDemo";
-import { IconArrowRight, IconLock, IconPlus } from "@/components/ui/Icons";
+import { IconArrowRight, IconLock } from "@/components/ui/Icons";
 
 interface FloorEntry {
   index: string;
@@ -58,12 +61,33 @@ function RoomSign({ number, room }: { number: string; room: string }) {
   );
 }
 
+const HERO_ZONES: readonly {
+  id: "desks" | "boardroom" | "espresso";
+  code: string;
+  label: string;
+}[] = [
+  { id: "desks", code: "01", label: "Open Desks" },
+  { id: "boardroom", code: "02", label: "Boardroom" },
+  { id: "espresso", code: "03", label: "Espresso" },
+];
+
 export default function HomePage() {
   const router = useRouter();
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [newSpaceName, setNewSpaceName] = useState("");
   const [newSpaceSlug, setNewSpaceSlug] = useState("");
+  const [heroSlug, setHeroSlug] = useState("");
   const [buzzerSlug, setBuzzerSlug] = useState("");
+  const [requestedZone, setRequestedZone] = useState<{
+    zone: "desks" | "boardroom" | "espresso";
+    seq: number;
+  } | null>(null);
+  const [floorStatus, setFloorStatus] = useState<HeroFloorStatus>({
+    zone: "desks",
+    zoneLabel: "Open Desks",
+    audiblePeers: ["Maya"],
+    isSealed: false,
+  });
 
   const handleNameChange = (val: string) => {
     setNewSpaceName(val);
@@ -82,56 +106,191 @@ export default function HomePage() {
     router.push(`/space/${newSpaceSlug.trim()}`);
   };
 
+  const handleHeroLaunch = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = heroSlug.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    if (!clean) {
+      setCreateModalOpen(true);
+      return;
+    }
+    router.push(`/space/${clean}`);
+  };
+
   const handleBottomBuzzer = (e: React.FormEvent) => {
     e.preventDefault();
     const clean = buzzerSlug.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
     router.push(`/space/${clean || "acme-hq"}`);
   };
 
+  const handleSelectZone = (zone: "desks" | "boardroom" | "espresso") => {
+    setRequestedZone((prev) => ({ zone, seq: (prev?.seq ?? 0) + 1 }));
+  };
+
   return (
     <div className="min-w-0">
-      {/* 01 · LOBBY HERO — The Isometric Office Bleeds Directly Off the Edge */}
+      {/* 01 · SIGNATURE EDITORIAL HERO — Live Floor Console Synced to Isometric Diorama */}
       <section className="relative overflow-hidden border-b border-white/[0.07] bg-bg">
-        <div className="max-w-[1320px] mx-auto px-4 sm:px-6 md:px-8 pt-10 md:pt-16 pb-8 lg:pb-12 relative">
-          <div className="grid grid-cols-1 lg:grid-cols-12 items-center gap-8 lg:gap-0">
+        {/* Warm studio light spill unifying the isometric floor with the editorial column */}
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0"
+          style={{
+            background:
+              "radial-gradient(58% 72% at 68% 46%, rgba(245, 158, 11, 0.065), transparent 72%)",
+          }}
+        />
+
+        <div className="max-w-[1320px] mx-auto px-4 sm:px-6 md:px-8 pt-12 md:pt-16 pb-10 lg:pb-14 relative">
+          <div className="grid grid-cols-1 lg:grid-cols-12 items-center gap-10 lg:gap-0">
             <div className="lg:col-span-5 relative z-10 space-y-6 lg:pr-4">
               <h1
-                className="font-display font-extrabold text-text tracking-[-0.035em] leading-[1.01]"
-                style={{ fontSize: "clamp(2.5rem, 1.45rem + 4.1vw, 4.6rem)" }}
+                className="font-editorial font-normal text-text tracking-[-0.025em] leading-[0.98] [text-wrap:normal] lg:w-[116%]"
+                style={{ fontSize: "clamp(2.7rem, 1.75rem + 2.4vw, 4.35rem)" }}
               >
-                Walk up to your teammate. Talk. Walk away.
+                <span className="block sm:whitespace-nowrap">Walk up to a desk.</span>
+                <span className="block sm:whitespace-nowrap">
+                  <em className="italic text-accent pr-2">Talk.</em>
+                  Walk away.
+                </span>
               </h1>
 
-              <p className="text-text-muted text-base sm:text-lg leading-relaxed max-w-md">
-                Open your team&apos;s floor in a browser tab. Pull up to a desk for a two-minute question, or shut the glass door when you want quiet.
+              <p className="text-[15px] sm:text-base text-text-muted leading-[1.6] max-w-[42ch]">
+                A live office floor in a browser tab. Pull beside a teammate for a quick question—or step behind glass when you need quiet.
               </p>
 
-              <div className="flex flex-wrap items-center gap-4 pt-1">
-                <button
-                  type="button"
-                  onClick={() => setCreateModalOpen(true)}
-                  className="px-6 py-3 bg-accent text-bg font-display font-bold text-sm rounded-control shadow-arcade-sm hover:brightness-110 active:scale-[0.99] transition-all inline-flex items-center gap-2"
-                >
-                  <IconPlus className="w-4 h-4" />
-                  <span>Open Your Office</span>
-                </button>
+              {/* Signature Live Floor Telemetry + Direct Room Switcher (Synced with Diorama) */}
+              <div className="border-y border-white/[0.09] py-4 space-y-3 max-w-[440px]">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5 min-w-0 text-xs">
+                    {floorStatus.isSealed ? (
+                      <IconLock className="w-3.5 h-3.5 text-accent shrink-0" />
+                    ) : floorStatus.audiblePeers.length > 0 ? (
+                      <span
+                        aria-hidden="true"
+                        className="inline-flex items-end gap-[2px] h-3 shrink-0"
+                      >
+                        <span className="w-[2px] h-2 bg-accent rounded-full animate-eq-1" />
+                        <span className="w-[2px] h-3 bg-accent rounded-full animate-eq-2" />
+                        <span className="w-[2px] h-2.5 bg-accent rounded-full animate-eq-3" />
+                      </span>
+                    ) : (
+                      <span
+                        aria-hidden="true"
+                        className="w-1.5 h-1.5 rounded-full bg-white/30 shrink-0"
+                      />
+                    )}
 
-                <Link
-                  href="/space/acme-hq"
-                  className="py-2 text-sm font-medium text-text hover:text-accent transition-colors inline-flex items-center gap-1.5"
-                >
-                  <span>Walk the demo floor</span>
-                  <IconArrowRight className="w-4 h-4 text-accent" />
-                </Link>
+                    <span className="truncate text-text-muted">
+                      {floorStatus.isSealed ? (
+                        <>
+                          <span className="text-accent font-medium">Sealed behind glass</span>
+                          {floorStatus.audiblePeers.length > 0 && (
+                            <>
+                              {" · "}
+                              <span className="text-text font-medium">
+                                {floorStatus.audiblePeers.join(", ")}
+                              </span>
+                            </>
+                          )}
+                        </>
+                      ) : floorStatus.audiblePeers.length > 0 ? (
+                        <>
+                          Hearing{" "}
+                          <span className="text-text font-medium">
+                            {floorStatus.audiblePeers.join(", ")}
+                          </span>
+                          {" · "}
+                          {floorStatus.zoneLabel}
+                        </>
+                      ) : (
+                        <>Walking · {floorStatus.zoneLabel}</>
+                      )}
+                    </span>
+                  </div>
+
+                  <span
+                    className={`font-mono text-[10px] uppercase tracking-[0.14em] shrink-0 ${
+                      floorStatus.isSealed ? "text-accent" : "text-text-muted/70"
+                    }`}
+                  >
+                    {floorStatus.isSealed ? "Soundproof" : "Live floor"}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-0.5">
+                  {HERO_ZONES.map((z) => {
+                    const active = floorStatus.zone === z.id;
+                    return (
+                      <button
+                        key={z.id}
+                        type="button"
+                        onClick={() => handleSelectZone(z.id)}
+                        aria-pressed={active}
+                        className={`pb-1 text-[11px] font-mono transition-colors inline-flex items-center gap-1.5 border-b-2 ${
+                          active
+                            ? "border-accent text-text"
+                            : "border-transparent text-text-muted hover:text-text hover:border-white/25"
+                        }`}
+                      >
+                        <span className={active ? "text-accent" : "text-text-muted/55"}>
+                          {z.code}
+                        </span>
+                        <span>{z.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
-              <p className="font-mono text-xs text-text-muted pt-4 border-t border-white/[0.08] max-w-xs">
-                Free for 4 people. No install.
-              </p>
+              {/* Signature Inline Floor Intercom Launcher */}
+              <form
+                onSubmit={handleHeroLaunch}
+                className="max-w-[440px] flex flex-col sm:flex-row items-stretch sm:items-center gap-2 pt-0.5"
+              >
+                <div className="flex-1 flex items-center bg-surface border border-[color:var(--color-border-strong)]/80 focus-within:border-accent rounded-control px-3.5 py-2.5 transition-colors">
+                  <span className="font-mono text-xs text-text-muted/70 mr-1 select-none shrink-0">
+                    /space/
+                  </span>
+                  <input
+                    type="text"
+                    value={heroSlug}
+                    onChange={(e) => setHeroSlug(e.target.value)}
+                    placeholder="your-team"
+                    aria-label="Enter your office room name"
+                    className="flex-1 min-w-0 bg-transparent text-xs font-mono text-text placeholder:text-text-muted/50 focus:outline-none"
+                  />
+                </div>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-accent text-bg font-display font-bold text-xs rounded-control shadow-arcade-sm hover:brightness-110 active:scale-[0.99] transition-all inline-flex items-center justify-center gap-1.5 shrink-0"
+                >
+                  <span>Open Floor</span>
+                  <IconArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </form>
+
+              <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-xs">
+                <Link
+                  href="/space/acme-hq"
+                  className="font-medium text-text hover:text-accent transition-colors inline-flex items-center gap-1.5"
+                >
+                  <span>Walk the live demo</span>
+                  <IconArrowRight className="w-3.5 h-3.5 text-accent" />
+                </Link>
+                <span aria-hidden="true" className="text-white/20">
+                  ·
+                </span>
+                <span className="font-mono text-text-muted">
+                  Free for 4 people. No install.
+                </span>
+              </div>
             </div>
 
             <div className="lg:col-span-7 relative lg:-mr-28 xl:-mr-40 lg:-mb-12">
-              <IsometricOfficeHero />
+              <IsometricOfficeHero
+                requestedZone={requestedZone}
+                onStatusChange={setFloorStatus}
+              />
             </div>
           </div>
         </div>
@@ -141,8 +300,12 @@ export default function HomePage() {
       <section className="max-w-[1320px] mx-auto px-4 sm:px-6 md:px-8 py-20 md:py-28 space-y-12">
         <div className="max-w-2xl space-y-3">
           <RoomSign number="Boardroom" room="Acoustic Test" />
-          <h2 className="font-display text-3xl sm:text-4xl md:text-[2.6rem] font-bold text-text tracking-[-0.025em] leading-[1.08]">
-            Distance sets the volume. Glass cuts it to zero.
+          <h2
+            className="font-editorial font-normal text-text tracking-[-0.02em] leading-[1.02]"
+            style={{ fontSize: "clamp(2.35rem, 1.7rem + 2.2vw, 3.6rem)" }}
+          >
+            Distance sets the volume.{" "}
+            <em className="italic text-accent">Glass</em> cuts it to zero.
           </h2>
           <p className="text-sm sm:text-base text-text-muted leading-relaxed">
             Move yourself across the floor below. Voices fade naturally as you step back—and vanish behind the glass boardroom wall until you walk through the door.
@@ -159,8 +322,12 @@ export default function HomePage() {
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
             <div className="space-y-3">
               <RoomSign number="Directory" room="Open Floors" />
-              <h2 className="font-display text-3xl sm:text-4xl font-bold text-text tracking-[-0.02em]">
-                Pick a floor and walk straight in.
+              <h2
+                className="font-editorial font-normal text-text tracking-[-0.02em] leading-[1.02]"
+                style={{ fontSize: "clamp(2.35rem, 1.7rem + 2.2vw, 3.5rem)" }}
+              >
+                Pick a floor and{" "}
+                <em className="italic text-accent">walk straight in.</em>
               </h2>
             </div>
             <Link
@@ -235,10 +402,16 @@ export default function HomePage() {
 
         {/* Minimal Door Buzzer Closer */}
         <div className="border-t border-white/[0.07] pt-14 flex flex-col lg:flex-row lg:items-end justify-between gap-8">
-          <div className="space-y-2 max-w-lg">
+          <div className="space-y-2 max-w-2xl">
             <RoomSign number="Front Door" room="Buzzer" />
-            <h2 className="font-display text-3xl sm:text-4xl font-bold text-text tracking-[-0.02em] pt-2">
-              Your floor is one knock away.
+            <h2
+              className="font-editorial font-normal text-text tracking-[-0.02em] leading-[1.02] [text-wrap:normal] pt-2"
+              style={{ fontSize: "clamp(2.35rem, 1.7rem + 2.2vw, 3.35rem)" }}
+            >
+              Your floor is{" "}
+              <em className="italic text-accent whitespace-nowrap">
+                one knock away.
+              </em>
             </h2>
           </div>
 
