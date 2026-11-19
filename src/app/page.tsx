@@ -21,29 +21,29 @@ const FLOOR_DIRECTORY: FloorEntry[] = [
     index: "F1",
     slug: "acme-hq",
     name: "Acme Tech HQ",
-    note: "Open workstation pods beside a soundproof glass boardroom, brainstorm war room, and espresso bar.",
-    rooms: "Boardroom · War Room · 12 Desks",
+    note: "Open workstation pods beside a soundproof glass boardroom and espresso bar.",
+    rooms: "12 Desks · Boardroom",
   },
   {
     index: "F2",
     slug: "indie-studio",
     name: "Indie Dev Studio",
-    note: "Product loft with wall whiteboards for sprints, critique tables, and a quiet corner lounge.",
-    rooms: "Design Pods · Sticky Wall · Lounge",
+    note: "Product loft with wall whiteboards for sprints and quiet critique rooms.",
+    rooms: "8 Desks · War Room",
   },
   {
     index: "F3",
     slug: "study-cafe",
     name: "Late Night Cafe",
-    note: "Heads-down study tables paired with soft synthesized ambient vinyl beats.",
-    rooms: "Focus Tables · Whisper Booth · Radio",
+    note: "Quiet coworking tables paired with soft ambient lo-fi beats.",
+    rooms: "10 Desks · Radio",
   },
   {
     index: "F4",
     slug: "hacker-den",
     name: "Standup & Demo Floor",
-    note: "Built for fast morning syncs, pair debugging, and dropping a live screen onto the main wall.",
-    rooms: "Presentation Wall · Standup Circle",
+    note: "Built for fast morning syncs and dropping a live screen onto the wall.",
+    rooms: "14 Desks · Screen Wall",
   },
 ];
 
@@ -63,7 +63,7 @@ export default function HomePage() {
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [newSpaceName, setNewSpaceName] = useState("");
   const [newSpaceSlug, setNewSpaceSlug] = useState("");
-  const [selectedTemplate, setSelectedTemplate] = useState("startup");
+  const [buzzerSlug, setBuzzerSlug] = useState("");
 
   const handleNameChange = (val: string) => {
     setNewSpaceName(val);
@@ -82,28 +82,33 @@ export default function HomePage() {
     router.push(`/space/${newSpaceSlug.trim()}`);
   };
 
+  const handleBottomBuzzer = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = buzzerSlug.trim().toLowerCase().replace(/[^a-z0-9_-]/g, "");
+    router.push(`/space/${clean || "acme-hq"}`);
+  };
+
   return (
     <div className="min-w-0">
-      {/* ROOM 01 · LOBBY HERO — The Isometric Office Itself Bleeds Off-Canvas */}
-      <section className="relative overflow-hidden border-b border-white/[0.08] bg-bg">
-        <div className="max-w-[1320px] mx-auto px-4 md:px-8 pt-10 md:pt-16 pb-10 lg:pb-16 relative">
-          <div className="grid grid-cols-1 lg:grid-cols-12 items-center gap-6 lg:gap-0">
-            {/* Left Copy Directly on Page */}
-            <div className="lg:col-span-6 relative z-10 space-y-6 lg:pr-6">
-              <RoomSign number="Lobby" room="Check-In Desk" />
+      {/* 01 · LOBBY HERO — The Isometric Office Bleeds Directly Off the Edge */}
+      <section className="relative overflow-hidden border-b border-white/[0.07] bg-bg">
+        <div className="max-w-[1320px] mx-auto px-4 sm:px-6 md:px-8 pt-10 md:pt-16 pb-8 lg:pb-12 relative">
+          <div className="grid grid-cols-1 lg:grid-cols-12 items-center gap-8 lg:gap-0">
+            <div className="lg:col-span-5 relative z-10 space-y-6 lg:pr-4">
+              <RoomSign number="Lobby" room="Floor 01" />
 
               <h1
-                className="font-display font-extrabold text-text tracking-[-0.03em] leading-[1.03]"
-                style={{ fontSize: "clamp(2.4rem, 1.4rem + 4.1vw, 4.5rem)" }}
+                className="font-display font-extrabold text-text tracking-[-0.035em] leading-[1.01]"
+                style={{ fontSize: "clamp(2.5rem, 1.45rem + 4.1vw, 4.6rem)" }}
               >
                 Walk up to your teammate. Talk. Walk away.
               </h1>
 
-              <p className="text-text-muted text-base sm:text-lg leading-relaxed max-w-lg">
-                No calendar links. No waiting rooms. Open your team&apos;s office in a browser tab, pull up to a desk for a two-minute question, or shut the glass door when you want quiet.
+              <p className="text-text-muted text-base sm:text-lg leading-relaxed max-w-md">
+                Open your team&apos;s floor in a browser tab. Pull up to a desk for a two-minute question, or shut the glass door when you want quiet.
               </p>
 
-              <div className="flex flex-wrap items-center gap-3 pt-1">
+              <div className="flex flex-wrap items-center gap-4 pt-1">
                 <button
                   type="button"
                   onClick={() => setCreateModalOpen(true)}
@@ -115,209 +120,156 @@ export default function HomePage() {
 
                 <Link
                   href="/space/acme-hq"
-                  className="px-5 py-3 border border-white/15 hover:border-accent text-text font-medium text-sm rounded-control transition-colors inline-flex items-center gap-2"
+                  className="py-2 text-sm font-medium text-text hover:text-accent transition-colors inline-flex items-center gap-1.5"
                 >
-                  <span>Walk Demo Floor</span>
+                  <span>Walk the demo floor</span>
                   <IconArrowRight className="w-4 h-4 text-accent" />
                 </Link>
               </div>
 
-              <p className="font-mono text-xs sm:text-sm text-text pt-3 border-t border-white/[0.08] max-w-md">
+              <p className="font-mono text-xs text-text-muted pt-4 border-t border-white/[0.08] max-w-xs">
                 Free for 4 people. No install.
               </p>
             </div>
 
-            {/* Right: Oversized Isometric Office Scene Bleeding Off Right & Bottom Edge */}
-            <div className="lg:col-span-6 relative lg:-mr-28 xl:-mr-40 lg:-mb-16">
+            <div className="lg:col-span-7 relative lg:-mr-28 xl:-mr-40 lg:-mb-12">
               <IsometricOfficeHero />
             </div>
           </div>
         </div>
       </section>
 
-      {/* ROOM 02 · SPATIAL AUDIO DEMO — Unboxed Editorial Soundstage */}
-      <section className="max-w-[1320px] mx-auto px-4 md:px-8 py-16 md:py-24 space-y-10">
+      {/* 02 · BOARDROOM ACOUSTICS — Interactive Spatial Audio Stage */}
+      <section className="max-w-[1320px] mx-auto px-4 sm:px-6 md:px-8 py-20 md:py-28 space-y-12">
         <div className="max-w-2xl space-y-3">
           <RoomSign number="Boardroom" room="Acoustic Test" />
-          <h2 className="font-display text-3xl sm:text-4xl font-bold text-text tracking-[-0.02em]">
+          <h2 className="font-display text-3xl sm:text-4xl md:text-[2.6rem] font-bold text-text tracking-[-0.025em] leading-[1.08]">
             Distance sets the volume. Glass cuts it to zero.
           </h2>
           <p className="text-sm sm:text-base text-text-muted leading-relaxed">
-            In a video call, everyone talks over everyone at one volume. Here, walking two steps closer fades your coworker up naturally—and crossing into a glass conference room seals the audio automatically.
+            Move yourself across the floor below. Voices fade naturally as you step back—and vanish behind the glass boardroom wall until you walk through the door.
           </p>
         </div>
 
         <SpatialAudioDemo />
       </section>
 
-      {/* ROOM 03 · OPEN FLOORS — Broken Out of Cards Into an Architectural Floor Index */}
-      <section className="max-w-[1320px] mx-auto px-4 md:px-8 py-14 md:py-20 border-t border-white/[0.08] space-y-10">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-          <div className="space-y-3">
-            <RoomSign number="Directory" room="Ready Floors" />
-            <h2 className="font-display text-3xl sm:text-4xl font-bold text-text tracking-[-0.02em]">
-              Step onto any floor right now.
-            </h2>
-          </div>
-          <Link
-            href="/spaces"
-            className="text-xs font-mono text-accent hover:underline inline-flex items-center gap-1.5 self-start sm:self-auto"
-          >
-            <span>All 6 blueprints</span>
-            <IconArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
-
-        <div className="divide-y divide-white/[0.08] border-y border-white/[0.08]">
-          {FLOOR_DIRECTORY.map((floor) => (
+      {/* 03 · BUILDING DIRECTORY & HONEST CLOSER */}
+      <section className="max-w-[1320px] mx-auto px-4 sm:px-6 md:px-8 py-16 md:py-24 border-t border-white/[0.07] space-y-20">
+        {/* Floor Index */}
+        <div className="space-y-8">
+          <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
+            <div className="space-y-3">
+              <RoomSign number="Directory" room="Open Floors" />
+              <h2 className="font-display text-3xl sm:text-4xl font-bold text-text tracking-[-0.02em]">
+                Pick a floor and walk straight in.
+              </h2>
+            </div>
             <Link
-              key={floor.slug}
-              href={`/space/${floor.slug}`}
-              className="group grid grid-cols-1 md:grid-cols-12 items-baseline gap-3 md:gap-6 py-6 hover:bg-white/[0.02] px-2 -mx-2 transition-colors"
+              href="/spaces"
+              className="text-xs font-mono text-accent hover:underline inline-flex items-center gap-1.5 self-start sm:self-auto"
             >
-              <div className="md:col-span-1 font-mono text-xs text-accent">
-                {floor.index}
-              </div>
-              <div className="md:col-span-3 font-display text-xl font-bold text-text group-hover:text-accent transition-colors">
-                {floor.name}
-              </div>
-              <div className="md:col-span-5 text-sm text-text-muted leading-relaxed">
-                {floor.note}
-              </div>
-              <div className="md:col-span-3 flex items-center md:justify-end gap-3 text-xs font-mono text-text-muted">
-                <span className="truncate">{floor.rooms}</span>
-                <IconArrowRight className="w-4 h-4 text-accent shrink-0 group-hover:translate-x-1 transition-transform" />
-              </div>
+              <span>All 6 blueprints</span>
+              <IconArrowRight className="w-3.5 h-3.5" />
             </Link>
-          ))}
-        </div>
-      </section>
+          </div>
 
-      {/* ROOM 04 · WAR ROOM — Uneven Staggered Split Directly on Canvas */}
-      <section className="max-w-[1320px] mx-auto px-4 md:px-8 py-16 md:py-24 border-t border-white/[0.08]">
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-start">
-          <div className="lg:col-span-5 space-y-5">
-            <RoomSign number="War Room" room="How Teams Work Here" />
-            <h2 className="font-display text-3xl sm:text-4xl font-bold text-text tracking-[-0.02em] leading-[1.08]">
-              Quiet when you are coding. Ready the second someone walks over.
-            </h2>
-            <p className="text-sm sm:text-base text-text-muted leading-relaxed">
-              Every detail exists so quick teammate questions don&apos;t turn into another 30-minute video invite.
+          <div className="divide-y divide-white/[0.08] border-y border-white/[0.08]">
+            {FLOOR_DIRECTORY.map((floor) => (
+              <Link
+                key={floor.slug}
+                href={`/space/${floor.slug}`}
+                className="group grid grid-cols-1 md:grid-cols-12 items-baseline gap-2.5 md:gap-6 py-6 hover:bg-white/[0.02] px-2 -mx-2 transition-colors"
+              >
+                <div className="md:col-span-1 font-mono text-xs text-accent">
+                  {floor.index}
+                </div>
+                <div className="md:col-span-3 font-display text-xl font-bold text-text group-hover:text-accent transition-colors">
+                  {floor.name}
+                </div>
+                <div className="md:col-span-5 text-sm text-text-muted leading-relaxed">
+                  {floor.note}
+                </div>
+                <div className="md:col-span-3 flex items-center md:justify-end gap-3 text-xs font-mono text-text-muted">
+                  <span>{floor.rooms}</span>
+                  <IconArrowRight className="w-4 h-4 text-accent shrink-0 group-hover:translate-x-1 transition-transform" />
+                </div>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {/* 3 Plain Architectural Facts (No Boxes) */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-10 md:gap-12">
+          <div className="border-t border-accent/60 pt-5 space-y-2">
+            <span className="font-mono text-[11px] text-accent">01 · Keyholder links</span>
+            <h3 className="font-display text-xl font-bold text-text">
+              Zero teammate accounts
+            </h3>
+            <p className="text-sm text-text-muted leading-relaxed">
+              Only the team admin creates a login. Send one locked link and teammates walk straight onto the floor.
             </p>
-            <div className="pt-2 flex flex-wrap gap-5 text-xs font-mono">
-              <Link href="/features" className="text-accent hover:underline">
-                Room controls →
-              </Link>
-              <Link href="/whiteboard" className="text-text hover:text-accent">
-                War Room Whiteboard →
-              </Link>
-              <Link href="/admin" className="text-text hover:text-accent">
-                Keyholder Console →
-              </Link>
-            </div>
           </div>
 
-          <div className="lg:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-x-10 gap-y-12">
-            <div className="border-t border-accent/50 pt-4 space-y-2">
-              <span className="font-mono text-[11px] text-accent">01 · Desks</span>
-              <h3 className="font-display text-lg font-bold text-text">
-                Claim your own workstation
-              </h3>
-              <p className="text-sm text-text-muted leading-relaxed">
-                Leave your status visible—Heads Down, Pair Ready, or Away—so teammates see your context before they walk over.
-              </p>
-            </div>
+          <div className="border-t border-white/15 pt-5 space-y-2">
+            <span className="font-mono text-[11px] text-accent">02 · Call view &amp; screen</span>
+            <h3 className="font-display text-xl font-bold text-text">
+              Floor or clean video grid
+            </h3>
+            <p className="text-sm text-text-muted leading-relaxed">
+              Work in 3D isometric space or flip to a focused HD video stage with screen sharing in one tap.
+            </p>
+          </div>
 
-            <div className="border-t border-white/15 pt-4 space-y-2 sm:mt-10">
-              <span className="font-mono text-[11px] text-accent">02 · Glass Doors</span>
-              <h3 className="font-display text-lg font-bold text-text">
-                Soundproof meeting rooms
-              </h3>
-              <p className="text-sm text-text-muted leading-relaxed">
-                Walk into the Glass Boardroom or War Room to keep private reviews inside four walls. Lock the room or listen for a knock chime.
-              </p>
-            </div>
-
-            <div className="border-t border-white/15 pt-4 space-y-2">
-              <span className="font-mono text-[11px] text-accent">03 · Buzzer Links</span>
-              <h3 className="font-display text-lg font-bold text-text">
-                Zero employee accounts
-              </h3>
-              <p className="text-sm text-text-muted leading-relaxed">
-                Only the team admin creates a Keyholder login. Teammates open the passcode link you share and land straight onto the floor.
-              </p>
-            </div>
-
-            <div className="border-t border-white/15 pt-4 space-y-2 sm:mt-10">
-              <span className="font-mono text-[11px] text-accent">04 · Screen &amp; Call</span>
-              <h3 className="font-display text-lg font-bold text-text">
-                Flip to a clean call grid anytime
-              </h3>
-              <p className="text-sm text-text-muted leading-relaxed">
-                Stay walking in 3D isometric space or expand into a focused video stage with live screen sharing and camera flip in one tap.
-              </p>
-            </div>
+          <div className="border-t border-white/15 pt-5 space-y-2">
+            <span className="font-mono text-[11px] text-accent">03 · Flat rates</span>
+            <h3 className="font-display text-xl font-bold text-text">
+              Free for 4 · $9 flat up to 30
+            </h3>
+            <p className="text-sm text-text-muted leading-relaxed">
+              Never pay per seat just to sit beside coworkers.{" "}
+              <Link href="/pricing" className="text-accent hover:underline font-medium">
+                See rates →
+              </Link>
+            </p>
           </div>
         </div>
-      </section>
 
-      {/* ROOM 05 · BOARDROOM LEDGER — Plain Comparison + Direct CTA */}
-      <section className="max-w-[1320px] mx-auto px-4 md:px-8 py-14 md:py-20 border-t border-white/[0.08] space-y-8">
-        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4">
-          <div className="space-y-3">
-            <RoomSign number="Boardroom" room="Simple Math" />
-            <h2 className="font-display text-2xl sm:text-3xl font-bold text-text tracking-[-0.02em]">
-              Stop paying per head just to sit near coworkers.
+        {/* Minimal Door Buzzer Closer */}
+        <div className="border-t border-white/[0.07] pt-14 flex flex-col lg:flex-row lg:items-end justify-between gap-8">
+          <div className="space-y-2 max-w-lg">
+            <RoomSign number="Front Door" room="Buzzer" />
+            <h2 className="font-display text-3xl sm:text-4xl font-bold text-text tracking-[-0.02em] pt-2">
+              Your floor is one knock away.
             </h2>
           </div>
-          <Link
-            href="/pricing"
-            className="text-xs font-mono text-accent hover:underline inline-flex items-center gap-1.5 self-start sm:self-auto"
-          >
-            <span>See full rate breakdown</span>
-            <IconArrowRight className="w-3.5 h-3.5" />
-          </Link>
-        </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[580px] text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-white/15 text-text-muted font-mono uppercase tracking-wider text-[11px]">
-                <th className="py-3 pr-4">Detail</th>
-                <th className="py-3 px-4 text-accent">ForgeSpace</th>
-                <th className="py-3 px-4">Gather.town</th>
-                <th className="py-3 pl-4">Zoom / Slack Huddles</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-white/[0.08] text-text">
-              <tr>
-                <td className="py-4 pr-4 font-medium">Team cost</td>
-                <td className="py-4 px-4 text-accent font-semibold">
-                  Free for 4 people · $9/mo flat Pro
-                </td>
-                <td className="py-4 px-4 text-text-muted">$7 per user / mo</td>
-                <td className="py-4 pl-4 text-text-muted">$13+ per user / mo</td>
-              </tr>
-              <tr>
-                <td className="py-4 pr-4 font-medium">Teammate signups</td>
-                <td className="py-4 px-4 font-medium">None — passcode link only</td>
-                <td className="py-4 px-4 text-text-muted">Per-user login required</td>
-                <td className="py-4 pl-4 text-text-muted">Workspace account needed</td>
-              </tr>
-              <tr>
-                <td className="py-4 pr-4 font-medium">Audio &amp; walls</td>
-                <td className="py-4 px-4 font-medium">Distance fade + glass rooms</td>
-                <td className="py-4 px-4 text-text-muted">Distance fade + rooms</td>
-                <td className="py-4 pl-4 text-text-muted">Separate breakout rooms</td>
-              </tr>
-              <tr>
-                <td className="py-4 pr-4 font-medium">3D Isometric Space</td>
-                <td className="py-4 px-4 font-medium">WebGL 3D + 2D + Call view</td>
-                <td className="py-4 px-4 text-text-muted">2D sprite map only</td>
-                <td className="py-4 pl-4 text-text-muted">Flat camera grid</td>
-              </tr>
-            </tbody>
-          </table>
+          <form
+            onSubmit={handleBottomBuzzer}
+            className="w-full max-w-md flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5"
+          >
+            <div className="flex-1 flex items-center bg-surface border border-[color:var(--color-border-strong)] focus-within:border-accent rounded-control px-3 h-11">
+              <span className="font-mono text-xs text-accent font-semibold mr-1.5 select-none">
+                Knock:
+              </span>
+              <span className="font-mono text-xs text-text-muted select-none">/space/</span>
+              <input
+                type="text"
+                value={buzzerSlug}
+                onChange={(e) => setBuzzerSlug(e.target.value)}
+                placeholder="your-team"
+                aria-label="Enter room slug to open"
+                className="flex-1 min-w-0 bg-transparent text-xs font-mono text-text placeholder:text-text-muted/50 focus:outline-none ml-0.5"
+              />
+            </div>
+            <button
+              type="submit"
+              className="h-11 px-6 bg-accent text-bg font-display font-bold text-xs rounded-control shadow-arcade-sm hover:brightness-110 transition-all inline-flex items-center justify-center gap-1.5 shrink-0"
+            >
+              <span>Ring In</span>
+              <IconArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </form>
         </div>
       </section>
 
@@ -361,36 +313,18 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div>
-            <label className="block text-xs font-medium text-text mb-1.5">
-              Floor Layout
-            </label>
-            <select
-              value={selectedTemplate}
-              onChange={(e) => setSelectedTemplate(e.target.value)}
-              className="w-full px-3 py-2 text-xs bg-bg border border-[color:var(--color-border-strong)] rounded-control text-text focus:outline-none focus:border-accent"
-            >
-              <option value="startup">Main Tech Floor (12 Desks + Glass Boardroom)</option>
-              <option value="studio">Creative Loft (Whiteboard + War Room)</option>
-              <option value="cafe">Late Night Study Cafe</option>
-            </select>
-          </div>
-
-          <div className="p-3.5 bg-surface-2/70 border border-white/[0.08] rounded-control text-xs text-text-muted space-y-1.5">
-            <span className="font-semibold text-text flex items-center gap-1.5">
-              <IconLock className="w-3.5 h-3.5 text-accent" />
-              <span>Want a passcode-locked link for your team?</span>
-            </span>
-            <p className="text-[11px] leading-relaxed">
-              Generate persistent passworded office links in the{" "}
+          <div className="p-3.5 bg-surface-2/70 border border-white/[0.08] rounded-control text-xs text-text-muted flex items-center gap-2">
+            <IconLock className="w-3.5 h-3.5 text-accent shrink-0" />
+            <span>
+              Want a locked team link?{" "}
               <Link
                 href="/admin"
                 onClick={() => setCreateModalOpen(false)}
                 className="text-accent font-medium hover:underline"
               >
-                Keyholder Console →
+                Open Keyholder Console
               </Link>
-            </p>
+            </span>
           </div>
 
           <div className="flex items-center justify-end gap-2 pt-2 border-t border-white/[0.08]">

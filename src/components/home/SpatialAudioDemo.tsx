@@ -461,11 +461,11 @@ export function SpatialAudioDemo() {
                   </div>
                 </div>
 
-                {/* Live level bar */}
+                {/* Live level bar (compositor-accelerated scaleX) */}
                 <div className="h-1.5 w-full bg-surface-2 overflow-hidden rounded-full">
                   <div
-                    className="h-full bg-accent transition-[width] duration-75"
-                    style={{ width: `${pct}%` }}
+                    className="h-full w-full origin-left bg-accent transition-transform duration-75"
+                    style={{ transform: `scaleX(${pct / 100})` }}
                   />
                 </div>
 
