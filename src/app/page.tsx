@@ -95,8 +95,6 @@ export default function HomePage() {
         <div className="max-w-[1320px] mx-auto px-4 sm:px-6 md:px-8 pt-10 md:pt-16 pb-8 lg:pb-12 relative">
           <div className="grid grid-cols-1 lg:grid-cols-12 items-center gap-8 lg:gap-0">
             <div className="lg:col-span-5 relative z-10 space-y-6 lg:pr-4">
-              <RoomSign number="Lobby" room="Floor 01" />
-
               <h1
                 className="font-display font-extrabold text-text tracking-[-0.035em] leading-[1.01]"
                 style={{ fontSize: "clamp(2.5rem, 1.45rem + 4.1vw, 4.6rem)" }}
