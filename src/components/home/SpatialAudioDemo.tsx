@@ -486,7 +486,7 @@ export function SpatialAudioDemo() {
           <span className="font-mono text-[11px] text-text-muted mr-1">Walk to:</span>
           <button
             type="button"
-            onClick={() => moveYouTo(4.2, 4.4)}
+            onClick={() => moveYouTo(4.9, 4.4)}
             className="px-2.5 py-1 border border-white/15 hover:border-accent rounded-control text-xs font-mono text-text transition-colors"
           >
             Maya&apos;s Desk

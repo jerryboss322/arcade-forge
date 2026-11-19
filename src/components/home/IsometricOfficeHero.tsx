@@ -49,11 +49,11 @@ export function IsometricOfficeHero() {
 
       const elapsed = reduceMotion ? 2.8 : (nowMs - startTime) / 1000;
 
-      // Isometric scale tuned so floor bleeds cleanly off right and bottom bounds
-      const tileW = Math.max(36, Math.min(54, width * 0.056));
+      // Isometric scale tuned so avatars remain framed while floor slab bleeds off right & bottom edges
+      const tileW = Math.max(36, Math.min(48, width * 0.048));
       const tileH = tileW * 0.5;
-      const originX = width * 0.44;
-      const originY = height * 0.06;
+      const originX = width * 0.36;
+      const originY = height * 0.08;
 
       const toIso = (gx: number, gy: number): [number, number] => [
         originX + (gx - gy) * (tileW / 2),

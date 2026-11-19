@@ -188,12 +188,12 @@ export function GlobalHeader() {
           {/* Center: Door Buzzer ("Knock: /space/room-slug") */}
           <form
             onSubmit={handleQuickJoin}
-            className="flex-1 max-w-[300px] hidden md:block"
+            className="flex-1 max-w-[320px] hidden md:block"
           >
-            <div className="relative flex items-center bg-surface border border-[color:var(--color-border-strong)]/80 focus-within:border-accent rounded-control transition-colors">
+            <div className="flex items-center bg-surface border border-[color:var(--color-border-strong)]/80 focus-within:border-accent rounded-control transition-colors pr-1">
               <label
                 htmlFor="door-buzzer-input"
-                className="pl-2.5 pr-1 text-[11px] font-mono select-none whitespace-nowrap flex items-center gap-1"
+                className="pl-2.5 pr-1 text-[11px] font-mono select-none whitespace-nowrap flex items-center gap-1 shrink-0"
               >
                 <span className="text-accent font-semibold">Knock:</span>
                 <span className="text-text-muted">/space/</span>
@@ -203,13 +203,13 @@ export function GlobalHeader() {
                 type="text"
                 value={quickJoinCode}
                 onChange={(e) => setQuickJoinCode(e.target.value)}
-                placeholder="room-slug"
+                placeholder="acme-hq"
                 aria-label="Door buzzer room slug"
-                className="w-full h-9 pr-14 bg-transparent text-xs text-text placeholder:text-text-muted/50 focus:outline-none font-mono"
+                className="flex-1 min-w-0 h-9 pr-2 bg-transparent text-xs text-text placeholder:text-text-muted/50 focus:outline-none font-mono"
               />
               <button
                 type="submit"
-                className="absolute right-1 px-2.5 py-1 text-[11px] font-mono font-semibold bg-surface-2 hover:bg-accent text-text hover:text-bg rounded-[6px] border border-white/10 transition-colors"
+                className="shrink-0 px-2.5 py-1 text-[11px] font-mono font-semibold bg-surface-2 hover:bg-accent text-text hover:text-bg rounded-[6px] border border-white/10 transition-colors"
               >
                 Ring
               </button>
