@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono, Plus_Jakarta_Sans } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 import { ArcadeProvider } from "@/components/providers/ArcadeProvider";
 import { GlobalHeader } from "@/components/layout/GlobalHeader";
 import { GlobalFooter } from "@/components/layout/GlobalFooter";
 
-const plusJakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
+const bricolage = localFont({
+  src: "./fonts/bricolage-grotesque-latin.woff2",
+  weight: "400 800",
   variable: "--font-display",
   display: "swap",
 });
@@ -24,9 +26,9 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "ForgeSpace — Spatial Virtual Office & Instant Team Presence",
+  title: "ForgeSpace — Walk up to your teammate. Talk. Walk away.",
   description:
-    "Browser-based 3D and 2D virtual office for modern remote teams. Spatial presence, HD LiveKit audio/video, soundproof conference rooms, claimable desks, and instant invite links.",
+    "Your remote office in a browser tab. Walk up to a desk to talk, step inside a soundproof glass boardroom, and knock to join. Free for 4 people.",
 };
 
 export default function RootLayout({
@@ -37,7 +39,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`dark ${plusJakarta.variable} ${inter.variable} ${jetbrainsMono.variable}`}
+      className={`dark ${bricolage.variable} ${inter.variable} ${jetbrainsMono.variable}`}
     >
       <body className="bg-bg text-text font-sans antialiased pb-16 md:pb-0 flex flex-col min-h-dvh">
         <ArcadeProvider>

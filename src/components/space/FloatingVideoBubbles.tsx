@@ -91,7 +91,7 @@ const FloatingBubble = memo(function FloatingBubble({
       <div
         className={`w-16 h-16 rounded-full overflow-hidden border-2 bg-surface shadow-arcade flex items-center justify-center relative ${
           isSpeaking
-            ? "border-[#37E6C4] ring-4 ring-[#37E6C4]/30 animate-pulse"
+            ? "border-accent ring-4 ring-accent/30 animate-pulse"
             : isLocal
               ? "border-accent"
               : "border-border"

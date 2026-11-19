@@ -10,7 +10,6 @@ import {
   IconKey,
   IconLock,
   IconPlus,
-  IconShieldCheck,
   IconTrash,
 } from "@/components/ui/Icons";
 
@@ -277,15 +276,17 @@ export default function AdminPortalPage() {
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 border-b border-white/[0.08] pb-6">
         <div>
-          <div className="inline-flex items-center gap-1.5 text-xs font-mono text-accent uppercase tracking-wider mb-1">
-            <IconShieldCheck className="w-3.5 h-3.5" />
-            <span>Boss &amp; Team Admin Console</span>
+          <div className="inline-flex items-center gap-2 px-3 py-1 border border-white/15 bg-surface text-[11px] font-mono uppercase tracking-[0.16em] text-text mb-3">
+            <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+            <span className="text-accent font-semibold">02</span>
+            <span className="text-white/25">/</span>
+            <span>Keyholder Office</span>
           </div>
-          <h1 className="font-display text-2xl md:text-4xl font-extrabold text-text tracking-tight">
-            Passworded Workspaces
+          <h1 className="font-display text-3xl md:text-4xl font-extrabold text-text tracking-[-0.02em]">
+            Locked Floor Links
           </h1>
           <p className="text-xs md:text-sm text-text-muted mt-1.5 max-w-2xl">
-            Only the Boss/Admin holds an account. Employees join directly using your passworded invite link — zero employee database accounts required.
+            Only the Keyholder keeps an account. Share one passworded link so teammates knock and walk straight in—free for 4 people.
           </p>
         </div>
 

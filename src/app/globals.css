@@ -4,24 +4,24 @@
 
 :root {
   color-scheme: dark;
-  accent-color: #2DD4BF;
-  scrollbar-color: #3E4A66 #090B10;
+  accent-color: #F59E0B;
+  scrollbar-color: #46444B #0C0C0E;
   scrollbar-width: auto;
 
-  --color-bg: #090B10;
-  --color-surface: #111520;
-  --color-surface-2: #191F2E;
-  --color-border: #2C354A;
-  --color-border-strong: #5E6B8A;
-  --color-text: #F4F6FB;
-  --color-text-muted: #9DA8C2;
-  --color-accent: #2DD4BF;
-  --color-accent-2: #6366F1;
+  --color-bg: #0C0C0E;
+  --color-surface: #141417;
+  --color-surface-2: #1C1C21;
+  --color-border: #2A292E;
+  --color-border-strong: #626068;
+  --color-text: #F6F3EC;
+  --color-text-muted: #A8A298;
+  --color-accent: #F59E0B;
+  --color-accent-2: #E5D9B6;
   --color-warn: #FBBF24;
-  --color-danger: #F87171;
+  --color-danger: #EF4444;
 
-  --font-display: "Plus Jakarta Sans", "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  --font-sans: "Inter", "Plus Jakarta Sans", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-display: "Bricolage Grotesque", system-ui, -apple-system, sans-serif;
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
 }
 
@@ -30,9 +30,21 @@ html {
   scrollbar-gutter: stable;
 }
 
+body {
+  line-height: 1.5;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  text-wrap: balance;
+}
+
+p, li {
+  text-wrap: pretty;
+}
+
 ::selection {
-  background-color: rgba(45, 212, 191, 0.28);
-  color: #F4F6FB;
+  background-color: rgba(245, 158, 11, 0.28);
+  color: #F6F3EC;
 }
 
 input:not([type="range"]):user-invalid,
@@ -43,7 +55,18 @@ select:user-invalid {
 
 input:not([type="range"]):user-valid,
 textarea:user-valid {
-  border-color: rgba(45, 212, 191, 0.55);
+  border-color: rgba(245, 158, 11, 0.55);
+}
+
+.drag-handle {
+  cursor: grab;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.drag-handle.dragging {
+  cursor: grabbing;
 }
 
 .cq-card {

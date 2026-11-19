@@ -14,12 +14,12 @@ import {
 } from "@/components/space/SpaceIcons";
 
 const AVATAR_COLORS = [
-  "#2DD4BF",
-  "#6366F1",
-  "#38BDF8",
   "#F59E0B",
+  "#E5D9B6",
+  "#EA580C",
+  "#84CC16",
+  "#38BDF8",
   "#A78BFA",
-  "#FB7185",
 ];
 
 export interface PreJoinConfig {

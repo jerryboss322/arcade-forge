@@ -12,106 +12,103 @@ export function GlobalFooter() {
   }
 
   return (
-    <footer className="border-t border-white/[0.08] bg-surface/50 text-text-muted mt-20 pb-20 md:pb-10">
-      <div className="max-w-[1280px] mx-auto px-4 md:px-8 py-12">
+    <footer className="border-t border-white/[0.08] bg-bg text-text-muted mt-16 pb-20 md:pb-10">
+      <div className="max-w-[1320px] mx-auto px-4 md:px-8 py-12">
         <div className="grid grid-cols-2 md:grid-cols-5 gap-8">
           {/* Brand Col */}
           <div className="col-span-2 space-y-3">
             <Link href="/" className="flex items-center gap-2.5 group w-fit">
               <ForgeSpaceMark className="w-7 h-7" />
               <span className="font-display text-base font-bold text-text tracking-tight">
-                Forge<span className="text-accent">Space</span>
+                ForgeSpace
               </span>
             </Link>
             <p className="text-xs text-text-muted leading-relaxed max-w-sm">
-              Browser-based 3D and 2D spatial offices powered by LiveKit Cloud SFU and encrypted proximity rooms. Instant team presence with zero mandatory employee accounts.
+              Walk onto your remote floor in a browser tab. Talk to whoever you walk beside, shut the glass door when you need quiet, and knock to join.
             </p>
             <div className="flex items-center gap-2 text-xs font-mono text-accent">
-              <span className="w-2 h-2 rounded-full bg-accent animate-pulse" />
-              <span>Real-Time SFU Presence · Zero Simulated Bots</span>
+              <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+              <span>Free for 4 people · No install · Live spatial audio</span>
             </div>
           </div>
 
-          {/* Col 1: Platform */}
+          {/* Building Floors */}
           <div className="space-y-3">
-            <div className="text-xs font-display font-semibold text-text">
-              Platform
+            <div className="text-[11px] font-mono uppercase tracking-[0.16em] text-text">
+              Directory
             </div>
             <ul className="space-y-2 text-xs">
               <li>
                 <Link href="/spaces" className="hover:text-accent transition-colors">
-                  Floorplan Catalog
+                  01 Floorplans
+                </Link>
+              </li>
+              <li>
+                <Link href="/admin" className="hover:text-accent transition-colors">
+                  02 Keyholder
                 </Link>
               </li>
               <li>
                 <Link href="/features" className="hover:text-accent transition-colors">
-                  Feature Specifications
+                  03 Room Specs
                 </Link>
               </li>
               <li>
                 <Link href="/pricing" className="hover:text-accent transition-colors">
-                  Pricing &amp; Plans
-                </Link>
-              </li>
-              <li>
-                <Link href="/space/acme-hq" className="hover:text-accent transition-colors inline-flex items-center gap-1.5">
-                  <span>Demo Floor</span>
-                  <span className="px-1.5 py-0.5 rounded text-[9px] font-mono bg-accent/15 text-accent border border-accent/30">
-                    3D
-                  </span>
+                  04 Rates
                 </Link>
               </li>
             </ul>
           </div>
 
-          {/* Col 2: Office Apps */}
+          {/* Annex */}
           <div className="space-y-3">
-            <div className="text-xs font-display font-semibold text-text">
-              Workspace Tools
+            <div className="text-[11px] font-mono uppercase tracking-[0.16em] text-text">
+              Annex
             </div>
             <ul className="space-y-2 text-xs">
               <li>
                 <Link href="/whiteboard" className="hover:text-accent transition-colors">
-                  Interactive Whiteboard
+                  War Room Board
                 </Link>
               </li>
               <li>
                 <Link href="/schedule" className="hover:text-accent transition-colors">
-                  Meeting Scheduler
+                  Room Calendar
                 </Link>
               </li>
               <li>
                 <Link href="/pulse" className="hover:text-accent transition-colors">
-                  Live Telemetry
+                  Building Pulse
                 </Link>
               </li>
               <li>
-                <Link href="/space/study-cafe" className="hover:text-accent transition-colors">
-                  Lo-Fi Study Cafe
+                <Link href="/space/acme-hq" className="hover:text-accent transition-colors">
+                  Acme HQ Demo Floor
                 </Link>
               </li>
             </ul>
           </div>
 
-          {/* Col 3: Resources */}
+          {/* Front Desk */}
           <div className="space-y-3">
-            <div className="text-xs font-display font-semibold text-text">
-              Resources
+            <div className="text-[11px] font-mono uppercase tracking-[0.16em] text-text">
+              Front Desk
             </div>
             <ul className="space-y-2 text-xs">
               <li>
-                <Link href="/admin" className="hover:text-accent transition-colors">
-                  Boss Admin Portal
-                </Link>
-              </li>
-              <li>
                 <Link href="/docs" className="hover:text-accent transition-colors">
-                  User Guide &amp; FAQ
+                  Manual &amp; Shortcuts
                 </Link>
               </li>
               <li>
                 <Link href="/about" className="hover:text-accent transition-colors">
-                  Architecture &amp; Privacy
+                  Privacy &amp; Architecture
+                </Link>
+              </li>
+              <li>
+                <Link href="/space/study-cafe" className="hover:text-accent transition-colors">
+                  Late Night Cafe
                 </Link>
               </li>
             </ul>
@@ -120,19 +117,19 @@ export function GlobalFooter() {
 
         <div className="mt-12 pt-6 border-t border-white/[0.08] flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] font-mono text-text-muted">
           <div>
-            &copy; {new Date().getFullYear()} ForgeSpace. All rights reserved. Privacy-first remote collaboration.
+            &copy; {new Date().getFullYear()} ForgeSpace · Quiet by default, open on knock.
           </div>
           <div className="flex items-center gap-4">
             <Link href="/docs#webrtc" className="hover:text-accent transition-colors">
-              LiveKit Diagnostics
+              Audio Diagnostics
             </Link>
             <span>·</span>
             <Link href="/pricing" className="hover:text-accent transition-colors">
-              Free 4-Seat Tier
+              Free for 4
             </Link>
             <span>·</span>
             <Link href="/about" className="hover:text-accent transition-colors">
-              Privacy First
+              Zero Recording
             </Link>
           </div>
         </div>

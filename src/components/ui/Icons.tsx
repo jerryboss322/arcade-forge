@@ -24,23 +24,23 @@ export function ForgeSpaceMark({ className = "w-8 h-8" }: IconProps) {
       />
       <path
         d="M18 8.5L26.5 13.4V23.2L18 28.1L9.5 23.2V13.4L18 8.5Z"
-        stroke="#2DD4BF"
+        stroke="#F59E0B"
         strokeWidth="1.75"
         strokeLinejoin="round"
-        fill="rgba(45, 212, 191, 0.1)"
+        fill="rgba(245, 158, 11, 0.12)"
       />
       <path
         d="M18 18L26.5 13.4M18 18V28.1M18 18L9.5 13.4"
-        stroke="#2DD4BF"
+        stroke="#F59E0B"
         strokeWidth="1.5"
         strokeLinecap="round"
         strokeLinejoin="round"
       />
-      <circle cx="18" cy="18" r="2.2" fill="#F4F6FB" />
+      <circle cx="18" cy="18" r="2.2" fill="#F6F3EC" />
       <defs>
         <linearGradient id="fs-bg" x1="2" y1="2" x2="34" y2="34" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#191F2E" />
-          <stop offset="1" stopColor="#0E121D" />
+          <stop stopColor="#1C1C21" />
+          <stop offset="1" stopColor="#0E0E11" />
         </linearGradient>
       </defs>
     </svg>
